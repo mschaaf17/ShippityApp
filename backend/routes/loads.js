@@ -323,13 +323,31 @@ router.get('/:id/preview-kingbee', async (req, res) => {
     const { id } = req.params;
     
     // Get load from database
-    const result = await pool.query(
+    // Try by order_id (VARCHAR) first, then by id (UUID)
+    // PostgreSQL can't directly compare UUID and VARCHAR types
+    let result = await pool.query(
       `SELECT l.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone
        FROM loads l
        LEFT JOIN customers c ON l.customer_id = c.id
-       WHERE l.id = $1 OR l.order_id = $1`,
+       WHERE l.order_id = $1`,
       [id]
     );
+    
+    // If not found by order_id, try by UUID id
+    if (result.rows.length === 0) {
+      try {
+        result = await pool.query(
+          `SELECT l.*, c.name as customer_name, c.email as customer_email, c.phone as customer_phone
+           FROM loads l
+           LEFT JOIN customers c ON l.customer_id = c.id
+           WHERE l.id = $1::uuid`,
+          [id]
+        );
+      } catch (uuidError) {
+        // If UUID cast fails, the id wasn't a valid UUID, so load doesn't exist
+        result = { rows: [] };
+      }
+    }
     
     if (result.rows.length === 0) {
       return res.status(404).json({ 
