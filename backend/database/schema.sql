@@ -42,12 +42,14 @@ CREATE TABLE IF NOT EXISTS loads (
   pickup_state VARCHAR(50),
   pickup_zip VARCHAR(20),
   pickup_date DATE,
+  pickup_time TIMESTAMP, -- Full pickup date/time with timezone
   
   delivery_address TEXT NOT NULL,
   delivery_city VARCHAR(100),
   delivery_state VARCHAR(50),
   delivery_zip VARCHAR(20),
   delivery_date DATE,
+  delivery_time TIMESTAMP, -- Full delivery date/time with timezone
   
   -- Status
   status VARCHAR(50) DEFAULT 'PENDING', -- PENDING, DISPATCHED, IN_TRANSIT, DELIVERED, COMPLETED
@@ -65,6 +67,9 @@ CREATE TABLE IF NOT EXISTS loads (
   
   -- Documents
   bol_url TEXT,
+  
+  -- Kingbee integration
+  reference_id VARCHAR(255), -- Kingbee correlation ID
   
   -- Timestamps
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -109,13 +114,43 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Webhook configuration table (for Kingbee and other integrations)
+CREATE TABLE IF NOT EXISTS webhook_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(100) NOT NULL, -- e.g., 'kingbee'
+  webhook_url TEXT NOT NULL,
+  enabled BOOLEAN DEFAULT true,
+  secret_token VARCHAR(255), -- Optional: for webhook signature verification
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Webhook delivery log (for tracking webhook deliveries to Kingbee)
+CREATE TABLE IF NOT EXISTS webhook_delivery_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  webhook_config_id UUID REFERENCES webhook_config(id),
+  load_id UUID REFERENCES loads(id),
+  payload JSONB NOT NULL,
+  status VARCHAR(20) DEFAULT 'PENDING', -- PENDING, SUCCESS, FAILED
+  status_code INTEGER,
+  response_body TEXT,
+  error_message TEXT,
+  retry_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  delivered_at TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_loads_customer ON loads(customer_id);
 CREATE INDEX IF NOT EXISTS idx_loads_status ON loads(status);
 CREATE INDEX IF NOT EXISTS idx_loads_order_id ON loads(order_id);
+CREATE INDEX IF NOT EXISTS idx_loads_reference_id ON loads(reference_id);
 CREATE INDEX IF NOT EXISTS idx_communication_load ON communication_log(load_id);
 CREATE INDEX IF NOT EXISTS idx_communication_recipient ON communication_log(recipient);
 CREATE INDEX IF NOT EXISTS idx_activity_load ON activity_log(load_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_load ON webhook_delivery_log(load_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_config ON webhook_delivery_log(webhook_config_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery_status ON webhook_delivery_log(status);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -134,5 +169,8 @@ CREATE TRIGGER update_customers_updated_at BEFORE UPDATE ON customers
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_loads_updated_at BEFORE UPDATE ON loads
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_webhook_config_updated_at BEFORE UPDATE ON webhook_config
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

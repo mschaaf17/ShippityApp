@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Dashboard from './components/Dashboard'
 import './App.css'
 
 function App() {
@@ -29,6 +30,8 @@ function App() {
     return colors[status] || 'bg-gray-100 text-gray-800'
   }
 
+  const [view, setView] = useState('dashboard'); // 'dashboard' or 'loads'
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -37,6 +40,36 @@ function App() {
           <p className="text-gray-600 mt-2">Auto Transport Broker Dashboard</p>
         </div>
 
+        {/* Navigation */}
+        <div className="mb-6 flex space-x-4">
+          <button
+            onClick={() => setView('dashboard')}
+            className={`px-4 py-2 rounded-lg ${
+              view === 'dashboard' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            System Dashboard
+          </button>
+          <button
+            onClick={() => setView('loads')}
+            className={`px-4 py-2 rounded-lg ${
+              view === 'loads' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Loads
+          </button>
+        </div>
+
+        {/* Dashboard View */}
+        {view === 'dashboard' && <Dashboard />}
+
+        {/* Loads View */}
+        {view === 'loads' && (
+          <>
         <div className="mb-6">
           <button
             onClick={fetchLoads}
@@ -117,6 +150,8 @@ function App() {
             <li>🔄 Next: Setup Twilio for SMS</li>
           </ul>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

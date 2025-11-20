@@ -6,22 +6,36 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_PHONE_NUMBER;
 
-const client = twilio(accountSid, authToken);
+// Only initialize Twilio client if credentials are present
+let client = null;
+if (accountSid && authToken) {
+  client = twilio(accountSid, authToken);
+} else {
+  console.log('⚠️ Twilio credentials not configured. SMS features will be disabled.');
+}
 
 /**
  * Send SMS notification
  */
 async function sendSMS(to, message, loadId = null) {
-  try {
-    // Map status to template
-    const templates = {
-      'PENDING': 'Hi {name}! We've received your shipping request for your {vehicle}. Order #{id}',
-      'DISPATCHED': 'Hi {name}! Your vehicle has been assigned a carrier. Expected pickup: {date}',
-      'PICKED_UP': 'Hi {name}! Your {vehicle} was picked up today. View your Bill of Lading here: {bol_link}',
-      'IN_TRANSIT': 'Hi {name}! Your vehicle is en route. Expected delivery: {date}',
-      'DELIVERED': 'Hi {name}! Your vehicle has been delivered. Please confirm receipt.'
-    };
+  // Check if Twilio is configured
+  if (!client || !fromNumber) {
+    console.log('⚠️ Twilio not configured. SMS not sent:', message);
+    // Still log to database for tracking
+    try {
+      await pool.query(
+        `INSERT INTO communication_log 
+         (load_id, type, direction, recipient, content, status, error_message) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [loadId, 'SMS', 'OUTBOUND', to, message, 'FAILED', 'Twilio not configured']
+      );
+    } catch (error) {
+      // Ignore logging errors
+    }
+    return { success: false, error: 'Twilio not configured' };
+  }
 
+  try {
     const result = await client.messages.create({
       body: message,
       from: fromNumber,

@@ -21,6 +21,10 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api/webhooks', require('./routes/webhooks'));
 app.use('/api/loads', require('./routes/loads'));
+app.use('/api/stats', require('./routes/stats'));
+app.use('/api/health', require('./routes/health'));
+app.use('/api/activity', require('./routes/activity'));
+app.use('/api/kingbee', require('./routes/kingbee'));
 
 // Basic route
 app.get('/', (req, res) => {
