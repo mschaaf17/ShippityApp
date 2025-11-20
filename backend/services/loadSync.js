@@ -123,7 +123,12 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
   
   // If status is DELIVERED and no BOL URL found, try to fetch from Super Dispatch API
   // This ensures we always have a BOL link when delivered
-  if ((status === 'DELIVERED' || status === 'delivered') && !bolUrl && guid) {
+  // Check after normalization so we can use normalizedStatus
+  // (Will update this check after normalizedStatus is set)
+  const isDelivered = (status === 'DELIVERED' || status === 'delivered' || 
+                       vehicleDataRaw.status === 'DELIVERED' || vehicleDataRaw.status === 'delivered');
+  
+  if (isDelivered && !bolUrl && guid) {
     try {
       console.log('⚠️ BOL link missing for delivered order, attempting to fetch...');
       const superDispatch = require('./superdispatch');
@@ -418,7 +423,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         delivery_zip = COALESCE($15, delivery_zip),
         delivery_date = COALESCE($16, delivery_date),
         delivery_time = COALESCE($17, delivery_time),
-        status = CASE WHEN $18 IS NOT NULL THEN $18 ELSE status END,
+        status = COALESCE($18::varchar, status),
         carrier_name = COALESCE($19, carrier_name),
         carrier_phone = COALESCE($20, carrier_phone),
         driver_name = COALESCE($21, driver_name),
@@ -448,7 +453,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         (deliveryVenue.zip || delivery.zip || null),
         deliveryDate ? deliveryDate.toISOString().split('T')[0] : null,
         deliveryDate && !isNaN(deliveryDate.getTime()) ? deliveryDate : null,
-        finalStatus || null,  // Use normalized status
+        (finalStatus ? String(finalStatus) : null),  // Ensure status is always a string or null
         carrier?.name || carrier?.company_name || null,
         carrier?.phone || null,
         carrier?.driver_name || carrier?.driver?.name || null,
@@ -536,7 +541,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
       (deliveryVenue.zip || delivery.zip || null),
         deliveryDate ? deliveryDate.toISOString().split('T')[0] : null,
         deliveryDate && !isNaN(deliveryDate.getTime()) ? deliveryDate : null,
-        finalStatus || null,  // Use normalized status
+        (finalStatus ? String(finalStatus) : null),  // Ensure status is always a string or null
         carrier?.name || carrier?.company_name || null,
       carrier?.phone || null,
       carrier?.driver_name || carrier?.driver?.name || null,
