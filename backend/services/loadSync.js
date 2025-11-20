@@ -406,7 +406,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         driver_phone = COALESCE($22, driver_phone),
         -- Always update BOL URL when Super Dispatch provides one (even if same)
         -- This ensures we always have the latest BOL URL from Super Dispatch
-        bol_url = CASE WHEN $23 IS NOT NULL THEN $23 ELSE bol_url END,
+        bol_url = CASE WHEN $23::varchar IS NOT NULL THEN $23::varchar ELSE bol_url END,
         reference_id = COALESCE($24, reference_id),
         updated_at = CURRENT_TIMESTAMP,
         picked_up_at = CASE WHEN $18 IN ('PICKED_UP', 'IN_TRANSIT') AND picked_up_at IS NULL THEN CURRENT_TIMESTAMP ELSE picked_up_at END,
@@ -436,7 +436,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         carrier?.phone || null,
         carrier?.driver_name || carrier?.driver?.name || null,
         carrier?.driver_phone || carrier?.driver?.phone || null,
-        bolUrl || null,
+        (bolUrl === undefined || bolUrl === null ? null : String(bolUrl)),  // Ensure bolUrl is string or null
         effectiveReferenceId || null,  // Use effective reference_id (from lot_number if available)
         orderIdentifier,  // Update order_id if vehicle moved to new order
         loadId
