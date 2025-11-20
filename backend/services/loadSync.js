@@ -405,7 +405,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         vehicle_make = COALESCE($3, vehicle_make),
         vehicle_model = COALESCE($4, vehicle_model),
         vehicle_vin = COALESCE($5, vehicle_vin),
-        order_id = COALESCE($25, order_id),  // Update order_id if vehicle moved to new order
+        order_id = COALESCE($25, order_id),
         pickup_address = COALESCE($6, pickup_address),
         pickup_city = COALESCE($7, pickup_city),
         pickup_state = COALESCE($8, pickup_state),
@@ -418,7 +418,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         delivery_zip = COALESCE($15, delivery_zip),
         delivery_date = COALESCE($16, delivery_date),
         delivery_time = COALESCE($17, delivery_time),
-        status = CASE WHEN $18 IS NOT NULL THEN $18 ELSE status END,  // Always update if status provided
+        status = CASE WHEN $18 IS NOT NULL THEN $18 ELSE status END,
         carrier_name = COALESCE($19, carrier_name),
         carrier_phone = COALESCE($20, carrier_phone),
         driver_name = COALESCE($21, driver_name),
