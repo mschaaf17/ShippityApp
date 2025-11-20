@@ -116,67 +116,17 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
     vehicleCount: vehicles?.length || 0
   });
   
-  // Extract BOL URL - Super Dispatch provides multiple BOL URLs
+  // Extract BOL URL - Super Dispatch provides multiple BOL URLs in the order response
+  // These are available from order creation and update with each status change
   // Prefer pdf_bol_url_with_template, then pdf_bol_url, then online_bol_url, then bol_url
-  // Also check at order level if not in root
+  // Super Dispatch includes BOL URLs from the moment the order is created, not just when delivered
   let bolUrl = pdf_bol_url_with_template || pdf_bol_url || online_bol_url || bol_url;
   
-  // If status is DELIVERED and no BOL URL found, try to fetch from Super Dispatch API
-  // This ensures we always have a BOL link when delivered
-  // Check after normalization so we can use normalizedStatus
-  // (Will update this check after normalizedStatus is set)
-  const isDelivered = (status === 'DELIVERED' || status === 'delivered' || 
-                       vehicleDataRaw.status === 'DELIVERED' || vehicleDataRaw.status === 'delivered');
-  
-  if (isDelivered && !bolUrl && guid) {
-    try {
-      console.log('⚠️ BOL link missing for delivered order, attempting to fetch...');
-      const superDispatch = require('./superdispatch');
-      
-      // First try to get full order data (might have BOL in response)
-      const fullOrderData = await superDispatch.getLoad(guid);
-      const orderData = fullOrderData.data?.object || fullOrderData.data || fullOrderData;
-      
-      // Try all possible BOL URL fields
-      bolUrl = orderData.pdf_bol_url_with_template || 
-               orderData.pdf_bol_url || 
-               orderData.online_bol_url || 
-               orderData.bol_url ||
-               null;
-      
-      // If still no BOL URL, try dedicated BOL endpoint
-      if (!bolUrl) {
-        console.log('⚠️ BOL URL not in order data, trying dedicated BOL endpoint...');
-        try {
-          const bolResponse = await superDispatch.getBOL(guid);
-          bolUrl = bolResponse.data?.object?.url || 
-                  bolResponse.data?.url || 
-                  bolResponse.url ||
-                  bolResponse.data?.object?.bol_url ||
-                  null;
-          
-          if (bolUrl) {
-            console.log('✅ BOL URL fetched from dedicated endpoint:', bolUrl);
-          }
-        } catch (bolError) {
-          // BOL might not be available yet (404) - this is normal for newly delivered orders
-          if (bolError.status === 404 || bolError.message?.includes('not available')) {
-            console.log('ℹ️ BOL not available yet from Super Dispatch - will be generated later');
-          } else {
-            console.error('⚠️ Error fetching BOL from dedicated endpoint:', bolError.message);
-          }
-        }
-      } else {
-        console.log('✅ BOL URL found in order data:', bolUrl);
-      }
-      
-      if (!bolUrl) {
-        console.log('ℹ️ BOL URL not available yet - Super Dispatch may generate it later');
-      }
-    } catch (bolError) {
-      console.error('⚠️ Error fetching BOL URL from Super Dispatch:', bolError.message);
-      // Continue without BOL URL
-    }
+  // Log BOL URL availability for debugging
+  if (bolUrl) {
+    console.log('✅ BOL URL found in Super Dispatch response:', bolUrl.substring(0, 50) + '...');
+  } else {
+    console.log('ℹ️ No BOL URL in Super Dispatch response (may be available in next update)');
   }
   
   // Use order number (e.g., "BMW1119OR" or "K111925FL1") or order_id or guid
@@ -382,6 +332,32 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
     // Update existing load
     // loadId is already set from the query above, no need to reassign
     
+    // Get current BOL URL from database to compare with new one
+    let currentBolUrl = null;
+    try {
+      const currentLoadResult = await pool.query(
+        'SELECT bol_url FROM loads WHERE id = $1',
+        [loadId]
+      );
+      if (currentLoadResult.rows.length > 0) {
+        currentBolUrl = currentLoadResult.rows[0].bol_url;
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not fetch current BOL URL for comparison:', error.message);
+    }
+    
+    // Check if BOL URL changed
+    if (bolUrl && bolUrl !== currentBolUrl) {
+      console.log('🔄 BOL URL updated:', {
+        old: currentBolUrl ? currentBolUrl.substring(0, 50) + '...' : 'none',
+        new: bolUrl.substring(0, 50) + '...'
+      });
+    } else if (bolUrl && bolUrl === currentBolUrl) {
+      console.log('✅ BOL URL unchanged (using latest from Super Dispatch):', bolUrl.substring(0, 50) + '...');
+    } else if (!bolUrl && currentBolUrl) {
+      console.log('ℹ️ No BOL URL in Super Dispatch response, keeping existing:', currentBolUrl.substring(0, 50) + '...');
+    }
+    
     // Parse pickup and delivery dates/times
     // Super Dispatch uses scheduled_at for pickup/delivery dates
     const pickupDate = pickup.scheduled_at ? (pickup.scheduled_at instanceof Date ? pickup.scheduled_at : new Date(pickup.scheduled_at)) : 
@@ -428,7 +404,9 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         carrier_phone = COALESCE($20, carrier_phone),
         driver_name = COALESCE($21, driver_name),
         driver_phone = COALESCE($22, driver_phone),
-        bol_url = COALESCE($23, bol_url),
+        -- Always update BOL URL when Super Dispatch provides one (even if same)
+        -- This ensures we always have the latest BOL URL from Super Dispatch
+        bol_url = CASE WHEN $23 IS NOT NULL THEN $23 ELSE bol_url END,
         reference_id = COALESCE($24, reference_id),
         updated_at = CURRENT_TIMESTAMP,
         picked_up_at = CASE WHEN $18 IN ('PICKED_UP', 'IN_TRANSIT') AND picked_up_at IS NULL THEN CURRENT_TIMESTAMP ELSE picked_up_at END,
@@ -467,19 +445,31 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
     
     console.log('✅ Load UPDATE completed with status:', finalStatus);
     
-    // Verify the update by querying the database
+    // Verify the update by querying the database (including BOL URL)
     const verifyResult = await pool.query(
-      `SELECT id, order_id, status, vehicle_vin, reference_id 
+      `SELECT id, order_id, status, vehicle_vin, reference_id, bol_url 
        FROM loads 
        WHERE id = $1`,
       [loadId]
     );
     if (verifyResult.rows.length > 0) {
-      console.log('✅ Verified database status after UPDATE:', {
-        order_id: verifyResult.rows[0].order_id,
-        status: verifyResult.rows[0].status,
-        statusMatches: verifyResult.rows[0].status === finalStatus
+      const updatedLoad = verifyResult.rows[0];
+      console.log('✅ Verified database after UPDATE:', {
+        order_id: updatedLoad.order_id,
+        status: updatedLoad.status,
+        statusMatches: updatedLoad.status === finalStatus,
+        bol_url: updatedLoad.bol_url ? updatedLoad.bol_url.substring(0, 50) + '...' : 'none',
+        bolUrlUpdated: bolUrl ? (updatedLoad.bol_url === bolUrl ? 'yes (same)' : (updatedLoad.bol_url ? 'yes (changed)' : 'no')) : 'n/a (not in Super Dispatch response)'
       });
+      
+      // Log BOL URL update confirmation
+      if (bolUrl && updatedLoad.bol_url) {
+        if (updatedLoad.bol_url !== bolUrl) {
+          console.log('⚠️ BOL URL mismatch! Expected:', bolUrl.substring(0, 50) + '...', 'Got:', updatedLoad.bol_url.substring(0, 50) + '...');
+        } else {
+          console.log('✅ BOL URL correctly updated to latest from Super Dispatch');
+        }
+      }
     }
   } else {
     // Create new load

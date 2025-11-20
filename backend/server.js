@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -26,13 +27,22 @@ app.use('/api/health', require('./routes/health'));
 app.use('/api/activity', require('./routes/activity'));
 app.use('/api/kingbee', require('./routes/kingbee'));
 
-// API Documentation Root Route
-app.get('/', (req, res) => {
+// Serve static files from React app build (for production)
+// In development, frontend runs separately on port 5173
+const frontendBuildPath = path.join(__dirname, '../frontend/dist');
+const frontendExists = require('fs').existsSync(frontendBuildPath);
+
+if (frontendExists) {
+  app.use(express.static(frontendBuildPath));
+}
+
+// API Documentation JSON endpoint (for React frontend to consume)
+app.get('/api/docs', (req, res) => {
   res.json({
-    name: 'Shippity Backend API',
+    name: 'Shipity Backend API',
     version: '1.0.0',
     base_url: req.protocol + '://' + req.get('host'),
-    description: 'API for managing shipping loads and integrations with Super Dispatch and Kingbee',
+    description: 'API for managing shipping loads and integrations with partners and Super Dispatch',
     documentation: {
       health_check: {
         endpoint: '/health',
@@ -44,13 +54,13 @@ app.get('/', (req, res) => {
         method: 'GET',
         description: 'Comprehensive health check for all services (database, Super Dispatch, Twilio, OpenAI)'
       },
-      kingbee_integration: {
-        description: 'Endpoints for Kingbee integration',
+      partner_integration: {
+        description: 'Partner Integration API - Order submission and real-time status updates',
         endpoints: {
           submit_order: {
             url: '/api/kingbee/orders',
             method: 'POST',
-            description: 'Submit order(s) from Kingbee to Shippity',
+            description: 'Submit order(s) from partner to Shipity',
             example_request: {
               vehicles: [
                 {
@@ -71,7 +81,7 @@ app.get('/', (req, res) => {
             method: 'POST',
             description: 'Configure webhook URL to receive status updates',
             example_request: {
-              webhook_url: 'https://your-domain.com/webhooks/kingbee',
+              webhook_url: 'https://your-domain.com/webhooks/partner',
               secret_token: 'optional-secret-token'
             }
           },
@@ -102,18 +112,18 @@ app.get('/', (req, res) => {
         webhook_payload_format: {
           order_id: 'K112025FL1',
           status: 'picked_up',
-          reference_id: 'KB-12345',
+          reference_id: 'PARTNER-12345',
           vin: '1FTBR1C82MKA69174',
           pickup_eta: '2025-11-20T16:00:00.000Z',
           delivery_eta: '2025-11-21T16:00:00.000Z',
-          bol_link: 'https://...' // Only present when delivered
+          bol_link: 'https://...' // Available when provided by Super Dispatch
         },
         status_mapping: {
           'assigned': ['NEW', 'PENDING', 'DISPATCHED', 'ASSIGNED', 'ACCEPTED'],
           'picked_up': ['PICKED_UP'],
-          'in_transit': ['IN_TRANSIT'],
+          // 'in_transit': ['IN_TRANSIT'],
           'delivered': ['DELIVERED', 'COMPLETED'],
-          'cancelled': ['CANCELLED', 'CANCELED']
+          'canceled': ['CANCELLED', 'CANCELED']
         }
       },
       loads: {
@@ -129,10 +139,10 @@ app.get('/', (req, res) => {
             method: 'GET',
             description: 'Get load by ID or order_id'
           },
-          preview_kingbee_payload: {
+          preview_webhook_payload: {
             url: '/api/loads/:id/preview-kingbee',
             method: 'GET',
-            description: 'Preview what would be sent to Kingbee for this load'
+            description: 'Preview what would be sent to partner via webhook for this load'
           },
           sync_from_superdispatch: {
             url: '/api/loads/superdispatch/sync/:guid',
@@ -148,7 +158,7 @@ app.get('/', (req, res) => {
       }
     },
     quick_start: {
-      kingbee_setup: [
+      partner_setup: [
         '1. Configure webhook: POST /api/kingbee/webhook-config',
         '2. Submit orders: POST /api/kingbee/orders',
         '3. Receive status updates automatically via webhook',
@@ -156,19 +166,32 @@ app.get('/', (req, res) => {
       ],
       testing: [
         '1. Check health: GET /health',
-        '2. Preview webhook payload: GET /api/loads/:id/preview-kingbee',
-        '3. Manually trigger webhook: POST /api/kingbee/loads/:id/send-webhook?sync=true'
+        '2. Preview webhook payload: GET /api/loads/:id/preview-partner',
+        '3. Manually trigger webhook: POST /api/partner/loads/:id/send-webhook?sync=true'
       ]
     },
     support: {
-      documentation: 'See API_DOCUMENTATION_FOR_KINGBEE.md for complete documentation',
+      documentation: 'Contact support for complete partner integration documentation',
       base_url: req.protocol + '://' + req.get('host')
     }
   });
 });
 
+// Serve React app for all non-API routes (React Router)
+// This must be after all API routes
+if (frontendExists) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendBuildPath, 'index.html'));
+  });
+} else {
+  // Fallback: serve JSON API docs if frontend not built
+  app.get('/', (req, res) => {
+    res.redirect('/api/docs');
+  });
+}
+
 app.listen(PORT, () => {
-  console.log(`🚀 Shippity backend server running on port ${PORT}`);
+  console.log(`🚀 Shipity backend server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

@@ -284,25 +284,10 @@ router.post('/loads/:loadId/send-webhook', async (req, res) => {
             
             const syncedLoad = await syncLoadFromSuperDispatch(superDispatchData);
             
-            // If status is DELIVERED and BOL is still missing, try dedicated BOL endpoint
-            if ((superDispatchData.status === 'DELIVERED' || superDispatchData.status === 'delivered') && !syncedLoad.bol_url) {
-              try {
-                console.log('🔍 Status is DELIVERED but BOL missing, trying dedicated BOL endpoint...');
-                const bolResponse = await superDispatch.getBOL(syncGuid);
-                const bolUrl = bolResponse.data?.object?.url || bolResponse.data?.url || bolResponse.url || bolResponse.data?.object?.bol_url;
-                
-                if (bolUrl) {
-                  // Update load with BOL link
-                  await pool.query(
-                    'UPDATE loads SET bol_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-                    [bolUrl, syncedLoad.id]
-                  );
-                  console.log('✅ BOL link fetched from dedicated endpoint:', bolUrl);
-                }
-              } catch (bolError) {
-                console.error('⚠️ Error fetching BOL from dedicated endpoint:', bolError.message);
-              }
-            }
+            // BOL URL is already extracted and stored by syncLoadFromSuperDispatch if available
+            // Super Dispatch includes BOL URLs (pdf_bol_url, pdf_bol_url_with_template, online_bol_url)
+            // in the order response from creation and updates automatically
+            // No need to fetch separately - Super Dispatch provides it in the response
             
             // Reload from database to get updated status and BOL
             const updatedResult = await pool.query(

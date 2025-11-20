@@ -213,7 +213,9 @@ async function handleLoadDelivered(loadId, loadData) {
   console.log(`🎉 Load ${loadId} delivered`);
   
   // Sync Super Dispatch data into YOUR database schema
-  let load = await syncLoadFromSuperDispatch({
+  // Super Dispatch includes BOL URLs (pdf_bol_url, pdf_bol_url_with_template, online_bol_url) 
+  // in the order response from creation and updates automatically
+  const load = await syncLoadFromSuperDispatch({
     ...loadData,
     order_id: loadId,
     guid: loadData.guid || loadData.load_guid,
@@ -221,47 +223,16 @@ async function handleLoadDelivered(loadId, loadData) {
   });
   console.log('✅ Load updated in database:', load.id);
   
-  // If BOL link is missing when delivered, try to fetch it from Super Dispatch API
-  // Super Dispatch provides BOL URLs in the order data, but if missing, try the BOL endpoint
-  if (!load.bol_url && (loadData.guid || loadData.load_guid)) {
-    try {
-      console.log('⚠️ BOL link missing, fetching from Super Dispatch API...');
-      const loadGuid = loadData.guid || loadData.load_guid;
-      
-      // First try to get the full order data (it might have BOL URL)
-      const fullLoadData = await superDispatch.getLoad(loadGuid);
-      const orderData = fullLoadData.data?.object || fullLoadData.data || fullLoadData;
-      
-      // Super Dispatch provides multiple BOL URLs - prefer pdf_bol_url_with_template
-      let bolUrl = orderData.pdf_bol_url_with_template || orderData.pdf_bol_url || orderData.online_bol_url || orderData.bol_url;
-      
-      // If still no BOL URL, try the dedicated BOL endpoint
-      if (!bolUrl) {
-        console.log('⚠️ BOL URL not in order data, trying dedicated BOL endpoint...');
-        try {
-          const bolResponse = await superDispatch.getBOL(loadGuid);
-          bolUrl = bolResponse.data?.object?.url || bolResponse.data?.url || bolResponse.url;
-        } catch (bolError) {
-          console.error('❌ Error fetching BOL from dedicated endpoint:', bolError.message);
-        }
-      }
-      
-      if (bolUrl) {
-        // Update load with BOL link
-        await pool.query(
-          'UPDATE loads SET bol_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-          [bolUrl, load.id]
-        );
-        load.bol_url = bolUrl;
-        console.log('✅ BOL link fetched from API:', bolUrl);
-      }
-    } catch (error) {
-      console.error('❌ Error fetching BOL link from API:', error.message);
-      // Continue without BOL link - will be available in a future update
-    }
+  // BOL URL is already extracted and stored by syncLoadFromSuperDispatch if available
+  // Super Dispatch provides BOL URLs from order creation, not just when delivered
+  if (load.bol_url) {
+    console.log('✅ BOL URL available:', load.bol_url.substring(0, 50) + '...');
+  } else {
+    console.log('ℹ️ BOL URL not available yet (may be in next Super Dispatch update)');
   }
   
   // Send status update to Kingbee if reference_id exists
+  // The webhook payload will include bol_link if available
   if (load.reference_id) {
     await sendStatusUpdateToKingbee(load);
   }

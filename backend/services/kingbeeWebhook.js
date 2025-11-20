@@ -19,7 +19,7 @@ function mapStatusToKingbee(superDispatchStatus) {
     'ASSIGNED': 'assigned',
     'ACCEPTED': 'assigned',  // Accepted orders are assigned to carriers
     'PICKED_UP': 'picked_up',
-    'IN_TRANSIT': 'in_transit',
+    // 'IN_TRANSIT': 'in_transit',
     'DELIVERED': 'delivered',
     'COMPLETED': 'delivered',
     'CANCELLED': 'cancelled',
@@ -80,6 +80,10 @@ function formatTimestampForKingbee(timestamp) {
  * Build Kingbee webhook payload from load data
  * @param {Object} load - Load record from database
  * @returns {Object} - Kingbee webhook payload
+ * 
+ * Note: BOL link is included whenever available in the database.
+ * Super Dispatch provides BOL URLs (pdf_bol_url, pdf_bol_url_with_template, online_bol_url)
+ * from order creation and updates them automatically with each status change.
  */
 function buildKingbeePayload(load) {
   return {
@@ -93,7 +97,7 @@ function buildKingbeePayload(load) {
     delivery_eta: load.delivery_time
       ? formatTimestampForKingbee(load.delivery_time)
       : formatDateForKingbee(load.delivery_date),
-    bol_link: load.bol_url || null
+    bol_link: load.bol_url || null  // Included whenever available, not just when delivered
   };
 }
 

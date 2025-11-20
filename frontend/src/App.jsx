@@ -1,8 +1,11 @@
 import { useState } from 'react'
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom'
 import Dashboard from './components/Dashboard'
+import ApiDocs from './components/ApiDocs'
 import './App.css'
 
-function App() {
+// Dashboard Component (original loads view)
+function LoadsView() {
   const [loads, setLoads] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -23,53 +26,42 @@ function App() {
     const colors = {
       'PENDING': 'bg-yellow-100 text-yellow-800',
       'DISPATCHED': 'bg-blue-100 text-blue-800',
-      'IN_TRANSIT': 'bg-purple-100 text-purple-800',
+      // 'IN_TRANSIT': 'bg-purple-100 text-purple-800',
       'DELIVERED': 'bg-green-100 text-green-800',
       'COMPLETED': 'bg-gray-100 text-gray-800'
     }
     return colors[status] || 'bg-gray-100 text-gray-800'
   }
 
-  const [view, setView] = useState('dashboard'); // 'dashboard' or 'loads'
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Shippity</h1>
+          <h1 className="text-4xl font-bold text-gray-900">Shipity Dashboard</h1>
           <p className="text-gray-600 mt-2">Auto Transport Broker Dashboard</p>
         </div>
 
-        {/* Navigation */}
         <div className="mb-6 flex space-x-4">
-          <button
-            onClick={() => setView('dashboard')}
-            className={`px-4 py-2 rounded-lg ${
-              view === 'dashboard' 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
+          <Link
+            to="/dashboard"
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
           >
             System Dashboard
-          </button>
-          <button
-            onClick={() => setView('loads')}
-            className={`px-4 py-2 rounded-lg ${
-              view === 'loads' 
-                ? 'bg-blue-600 text-white' 
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
+          </Link>
+          <Link
+            to="/loads"
+            className="px-4 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50"
           >
             Loads
-          </button>
+          </Link>
+          <Link
+            to="/"
+            className="px-4 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50"
+          >
+            API Docs
+          </Link>
         </div>
 
-        {/* Dashboard View */}
-        {view === 'dashboard' && <Dashboard />}
-
-        {/* Loads View */}
-        {view === 'loads' && (
-          <>
         <div className="mb-6">
           <button
             onClick={fetchLoads}
@@ -140,22 +132,44 @@ function App() {
             </div>
           )}
         </div>
-
-        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">🚀 Getting Started</h3>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>✅ Backend server running on port 3000</li>
-            <li>✅ Database connection configured</li>
-            <li>🔄 Next: Connect Super Dispatch webhook</li>
-            <li>🔄 Next: Setup Twilio for SMS</li>
-          </ul>
-        </div>
-          </>
-        )}
       </div>
     </div>
   )
 }
 
-export default App
+// Main App with Router
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* API Documentation at root */}
+        <Route path="/" element={<ApiDocs />} />
+        
+        {/* Dashboard routes */}
+        <Route path="/dashboard" element={
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              <div className="mb-6 flex space-x-4">
+                <Link to="/" className="px-4 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50">
+                  API Docs
+                </Link>
+                <Link to="/dashboard" className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">
+                  System Dashboard
+                </Link>
+                <Link to="/loads" className="px-4 py-2 rounded-lg bg-white text-gray-700 hover:bg-gray-50">
+                  Loads
+                </Link>
+              </div>
+              <Dashboard />
+            </div>
+          </div>
+        } />
+        
+        {/* Loads view */}
+        <Route path="/loads" element={<LoadsView />} />
+      </Routes>
+    </Router>
+  )
+}
 
+export default App
