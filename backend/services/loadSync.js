@@ -418,7 +418,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         delivery_zip = COALESCE($15, delivery_zip),
         delivery_date = COALESCE($16, delivery_date),
         delivery_time = COALESCE($17, delivery_time),
-        status = COALESCE($18, status),  // Update status if provided, otherwise keep existing
+        status = CASE WHEN $18 IS NOT NULL THEN $18 ELSE status END,  // Always update if status provided
         carrier_name = COALESCE($19, carrier_name),
         carrier_phone = COALESCE($20, carrier_phone),
         driver_name = COALESCE($21, driver_name),
@@ -461,6 +461,21 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
     );
     
     console.log('✅ Load UPDATE completed with status:', finalStatus);
+    
+    // Verify the update by querying the database
+    const verifyResult = await pool.query(
+      `SELECT id, order_id, status, vehicle_vin, reference_id 
+       FROM loads 
+       WHERE id = $1`,
+      [loadId]
+    );
+    if (verifyResult.rows.length > 0) {
+      console.log('✅ Verified database status after UPDATE:', {
+        order_id: verifyResult.rows[0].order_id,
+        status: verifyResult.rows[0].status,
+        statusMatches: verifyResult.rows[0].status === finalStatus
+      });
+    }
   } else {
     // Create new load
     // Parse pickup and delivery dates/times

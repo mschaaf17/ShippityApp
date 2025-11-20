@@ -212,7 +212,9 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const result = await pool.query(
+    // Try by order_id (VARCHAR) first, then by id (UUID)
+    // PostgreSQL can't directly compare UUID and VARCHAR types
+    let result = await pool.query(
       `SELECT 
         l.*,
         c.name as customer_name,
@@ -220,9 +222,29 @@ router.get('/:id', async (req, res) => {
         c.phone as customer_phone
        FROM loads l
        LEFT JOIN customers c ON l.customer_id = c.id
-       WHERE l.id = $1 OR l.order_id = $1`,
+       WHERE l.order_id = $1`,
       [id]
     );
+    
+    // If not found by order_id, try by UUID id
+    if (result.rows.length === 0) {
+      try {
+        result = await pool.query(
+          `SELECT 
+            l.*,
+            c.name as customer_name,
+            c.email as customer_email,
+            c.phone as customer_phone
+           FROM loads l
+           LEFT JOIN customers c ON l.customer_id = c.id
+           WHERE l.id = $1::uuid`,
+          [id]
+        );
+      } catch (uuidError) {
+        // If UUID cast fails, the id wasn't a valid UUID, so load doesn't exist
+        result = { rows: [] };
+      }
+    }
     
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Load not found' });
@@ -280,15 +302,33 @@ router.put('/:id', async (req, res) => {
     // Add load ID to values
     values.push(id);
     
-    const query = `
+    // Handle UUID vs VARCHAR type mismatch - try both id and order_id separately
+    let query = `
       UPDATE loads 
       SET ${updateFields.join(', ')}
-      WHERE id = $${paramIndex} OR order_id = $${paramIndex}
+      WHERE order_id = $${paramIndex}
       RETURNING *
     `;
     
-    const result = await pool.query(query, values);
+    let result = await pool.query(query, values);
     
+    // If not found by order_id, try by UUID id
+    if (result.rows.length === 0) {
+      query = `
+        UPDATE loads 
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramIndex}::uuid
+        RETURNING *
+      `;
+      try {
+        result = await pool.query(query, values);
+      } catch (uuidError) {
+        // If UUID cast fails, the id wasn't a valid UUID
+        result = { rows: [] };
+      }
+    }
+    
+    // Query already executed above, check results
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
