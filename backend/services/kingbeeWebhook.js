@@ -13,9 +13,11 @@ const pool = require('../config/database');
  */
 function mapStatusToKingbee(superDispatchStatus) {
   const statusMap = {
+    'NEW': 'assigned',
     'PENDING': 'assigned',
     'DISPATCHED': 'assigned',
     'ASSIGNED': 'assigned',
+    'ACCEPTED': 'assigned',  // Accepted orders are assigned to carriers
     'PICKED_UP': 'picked_up',
     'IN_TRANSIT': 'in_transit',
     'DELIVERED': 'delivered',
@@ -25,8 +27,16 @@ function mapStatusToKingbee(superDispatchStatus) {
   };
   
   // Normalize status (uppercase, replace spaces with underscores)
-  const normalized = (superDispatchStatus || '').toUpperCase().replace(/\s+/g, '_');
-  return statusMap[normalized] || superDispatchStatus.toLowerCase().replace(/\s+/g, '_');
+  const normalized = (superDispatchStatus || '').toUpperCase().replace(/\s+/g, '_').trim();
+  
+  // Check if mapped, otherwise return lowercase version
+  if (statusMap[normalized]) {
+    return statusMap[normalized];
+  }
+  
+  // Fallback: return lowercase version of normalized status
+  // This handles any unmapped statuses gracefully
+  return normalized.toLowerCase().replace(/\s+/g, '_');
 }
 
 /**

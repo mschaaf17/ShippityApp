@@ -70,6 +70,30 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
   }
   const effectiveReferenceId = reference_id || vehicleLotNumber || null;
   
+  // Normalize status - Super Dispatch might return status at order level or vehicle level
+  // Check vehicle status first (often more current), then fall back to order status
+  // Convert to uppercase to match our database schema
+  let normalizedStatus = null;
+  if (vehicleDataRaw.status) {
+    normalizedStatus = String(vehicleDataRaw.status).toUpperCase().trim();
+    console.log(`📋 Using vehicle-level status: ${normalizedStatus} (from vehicle)`);
+  } else if (status) {
+    normalizedStatus = String(status).toUpperCase().trim();
+    console.log(`📋 Using order-level status: ${normalizedStatus} (from order)`);
+  }
+  
+  // Log status for debugging
+  console.log('🔍 Status extraction:', {
+    orderStatus: status,
+    vehicleStatus: vehicleDataRaw.status,
+    normalizedStatus: normalizedStatus,
+    hasVehicles: vehicles && vehicles.length > 0,
+    vehicleCount: vehicles?.length || 0
+  });
+  
+  // Use normalized status for database operations
+  const finalStatus = normalizedStatus || null;
+  
   // Explicitly convert undefined values to null to avoid PostgreSQL type inference issues
   // Use strict conversion to ensure no undefined values remain
   const vehicleData = {
@@ -351,7 +375,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
 
   if (loadFound && loadId) {
     // Update existing load
-    loadId = loadResult.rows[0].id;
+    // loadId is already set from the query above, no need to reassign
     
     // Parse pickup and delivery dates/times
     // Super Dispatch uses scheduled_at for pickup/delivery dates
@@ -363,6 +387,16 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
     // Extract venue data if present (Super Dispatch returns venue structure)
     const pickupVenue = pickup.venue || {};
     const deliveryVenue = delivery.venue || {};
+    
+    // Log status update for debugging
+    console.log('🔄 About to UPDATE load with status:', {
+      loadId: loadId,
+      currentStatusInDb: 'unknown (will check)',
+      newStatus: finalStatus,
+      statusSource: vehicleDataRaw.status ? 'vehicle' : 'order',
+      originalOrderStatus: status,
+      originalVehicleStatus: vehicleDataRaw.status
+    });
     
     await pool.query(
       `UPDATE loads SET
@@ -384,7 +418,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         delivery_zip = COALESCE($15, delivery_zip),
         delivery_date = COALESCE($16, delivery_date),
         delivery_time = COALESCE($17, delivery_time),
-        status = COALESCE($18, status),
+        status = COALESCE($18, status),  // Update status if provided, otherwise keep existing
         carrier_name = COALESCE($19, carrier_name),
         carrier_phone = COALESCE($20, carrier_phone),
         driver_name = COALESCE($21, driver_name),
@@ -414,7 +448,7 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         (deliveryVenue.zip || delivery.zip || null),
         deliveryDate ? deliveryDate.toISOString().split('T')[0] : null,
         deliveryDate && !isNaN(deliveryDate.getTime()) ? deliveryDate : null,
-        status || null,
+        finalStatus || null,  // Use normalized status
         carrier?.name || carrier?.company_name || null,
         carrier?.phone || null,
         carrier?.driver_name || carrier?.driver?.name || null,
@@ -425,6 +459,8 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
         loadId
       ]
     );
+    
+    console.log('✅ Load UPDATE completed with status:', finalStatus);
   } else {
     // Create new load
     // Parse pickup and delivery dates/times
@@ -483,10 +519,10 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
       (deliveryVenue.city || delivery.city || null),
       (deliveryVenue.state || delivery.state || null),
       (deliveryVenue.zip || delivery.zip || null),
-      deliveryDate ? deliveryDate.toISOString().split('T')[0] : null,
-      deliveryDate && !isNaN(deliveryDate.getTime()) ? deliveryDate : null,
-      status || null,
-      carrier?.name || carrier?.company_name || null,
+        deliveryDate ? deliveryDate.toISOString().split('T')[0] : null,
+        deliveryDate && !isNaN(deliveryDate.getTime()) ? deliveryDate : null,
+        finalStatus || null,  // Use normalized status
+        carrier?.name || carrier?.company_name || null,
       carrier?.phone || null,
       carrier?.driver_name || carrier?.driver?.name || null,
       carrier?.driver_phone || carrier?.driver?.phone || null,
