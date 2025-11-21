@@ -85,24 +85,64 @@ router.post('/superdispatch', async (req, res) => {
  */
 router.post('/twilio/status', async (req, res) => {
   try {
-    const { MessageSid, MessageStatus, ErrorCode, ErrorMessage } = req.body;
+    const { MessageSid, MessageStatus, To, ErrorCode, ErrorMessage } = req.body;
     console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
     
     if (ErrorCode) {
       console.error(`❌ SMS Delivery Error: ${ErrorMessage} (Code: ${ErrorCode})`);
     }
     
-    // Update communication log with delivery status
-    await pool.query(
+    // Update the most recent outbound SMS for this recipient
+    // Match by MessageSid stored in error_message field (format: TWILIO_SID:SMxxxxx)
+    const statusMap = {
+      'queued': 'SENT',
+      'sent': 'SENT',
+      'delivered': 'DELIVERED',
+      'undelivered': 'FAILED',
+      'failed': 'FAILED'
+    };
+    
+    const dbStatus = statusMap[MessageStatus.toLowerCase()] || 'SENT';
+    
+    // Find by MessageSid stored in error_message field
+    let updateResult = await pool.query(
       `UPDATE communication_log 
-       SET status = $1, delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END, 
+       SET status = $1,
+           delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
            error_message = CASE WHEN $3 IS NOT NULL THEN $3 ELSE error_message END
-       WHERE content LIKE '%' || $4 || '%' OR id IN (
-         SELECT id FROM communication_log WHERE type = 'SMS' AND direction = 'OUTBOUND' 
-         ORDER BY created_at DESC LIMIT 1
-       )`,
-      [MessageStatus.toUpperCase(), MessageStatus, ErrorMessage, MessageSid]
+       WHERE error_message LIKE $4 || '%'
+       AND type = 'SMS' 
+       AND direction = 'OUTBOUND'
+       RETURNING id`,
+      [dbStatus, MessageStatus.toLowerCase(), ErrorMessage || null, `TWILIO_SID:${MessageSid}`]
     );
+    
+    if (updateResult.rows.length === 0 && To) {
+      // Fallback: find most recent outbound SMS to this number within last 5 minutes
+      updateResult = await pool.query(
+        `UPDATE communication_log 
+         SET status = $1,
+             delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
+             error_message = CASE WHEN $3 IS NOT NULL THEN $3 || ' (Twilio: ' || $4 || ')' ELSE COALESCE(error_message, 'TWILIO_SID:' || $4) END
+         WHERE id = (
+           SELECT id FROM communication_log 
+           WHERE type = 'SMS' 
+           AND direction = 'OUTBOUND'
+           AND recipient = $5
+           AND created_at > NOW() - INTERVAL '5 minutes'
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+         RETURNING id`,
+        [dbStatus, MessageStatus.toLowerCase(), ErrorMessage || null, MessageSid, To]
+      );
+    }
+    
+    if (updateResult.rows.length > 0) {
+      console.log(`✅ Updated message status: ${updateResult.rows[0].id} → ${dbStatus}`);
+    } else {
+      console.log(`⚠️ Could not find message to update status for: ${MessageSid}`);
+    }
     
     res.status(200).send('OK');
   } catch (error) {

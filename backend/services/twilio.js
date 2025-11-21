@@ -48,12 +48,12 @@ async function sendSMS(to, message, loadId = null) {
       statusCallbackMethod: 'POST'
     });
 
-    // Log to database
+    // Log to database (store message SID in error_message field temporarily for status tracking)
     await pool.query(
       `INSERT INTO communication_log 
-       (load_id, type, direction, recipient, content, status, sent_at) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [loadId, 'SMS', 'OUTBOUND', to, message, 'SENT', new Date()]
+       (load_id, type, direction, recipient, content, status, sent_at, error_message) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [loadId, 'SMS', 'OUTBOUND', to, message, 'SENT', new Date(), `TWILIO_SID:${result.sid}`]
     );
 
     console.log(`✅ SMS sent to ${to}: ${result.sid}`);
