@@ -79,9 +79,24 @@ CREATE TABLE IF NOT EXISTS loads (
   completed_at TIMESTAMP
 );
 
+-- Conversations table (for tracking SMS/email threads)
+CREATE TABLE IF NOT EXISTS conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number VARCHAR(50) NOT NULL, -- For SMS conversations
+  email VARCHAR(255), -- For email conversations
+  participant_type VARCHAR(20) DEFAULT 'UNKNOWN', -- CUSTOMER, CARRIER, UNKNOWN
+  participant_name VARCHAR(255),
+  load_id UUID REFERENCES loads(id), -- Primary load for this conversation
+  status VARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, RESOLVED, ESCALATED
+  last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Communication log
 CREATE TABLE IF NOT EXISTS communication_log (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID REFERENCES conversations(id), -- Link to conversation thread
   load_id UUID REFERENCES loads(id),
   customer_id UUID REFERENCES customers(id),
   
@@ -145,6 +160,10 @@ CREATE INDEX IF NOT EXISTS idx_loads_customer ON loads(customer_id);
 CREATE INDEX IF NOT EXISTS idx_loads_status ON loads(status);
 CREATE INDEX IF NOT EXISTS idx_loads_order_id ON loads(order_id);
 CREATE INDEX IF NOT EXISTS idx_loads_reference_id ON loads(reference_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_phone ON conversations(phone_number);
+CREATE INDEX IF NOT EXISTS idx_conversations_email ON conversations(email);
+CREATE INDEX IF NOT EXISTS idx_conversations_load ON conversations(load_id);
+CREATE INDEX IF NOT EXISTS idx_communication_conversation ON communication_log(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_communication_load ON communication_log(load_id);
 CREATE INDEX IF NOT EXISTS idx_communication_recipient ON communication_log(recipient);
 CREATE INDEX IF NOT EXISTS idx_activity_load ON activity_log(load_id);
@@ -172,5 +191,8 @@ CREATE TRIGGER update_loads_updated_at BEFORE UPDATE ON loads
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_webhook_config_updated_at BEFORE UPDATE ON webhook_config
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_conversations_updated_at BEFORE UPDATE ON conversations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

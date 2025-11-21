@@ -15,21 +15,27 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 /**
  * Main handler for inbound messages
  */
-async function handleInboundMessage(phoneNumber, message) {
+async function handleInboundMessage(phoneNumber, message, conversationId = null) {
   try {
     console.log(`🤖 AI processing message from ${phoneNumber}: ${message}`);
+
+    // Get conversation history if conversationId provided
+    let conversationHistory = [];
+    if (conversationId) {
+      conversationHistory = await getConversationHistory(conversationId);
+    }
 
     // Step 1: Identify sender (customer or carrier?)
     const senderType = await identifySender(phoneNumber);
     
     // Step 2: Process based on sender type
     if (senderType === 'CUSTOMER') {
-      return await handleCustomerMessage(phoneNumber, message);
+      return await handleCustomerMessage(phoneNumber, message, conversationHistory);
     } else if (senderType === 'CARRIER') {
-      return await handleCarrierMessage(phoneNumber, message);
+      return await handleCarrierMessage(phoneNumber, message, conversationHistory);
     } else {
       // Unknown sender - ask who they are
-      return await handleUnknownSender(phoneNumber, message);
+      return await handleUnknownSender(phoneNumber, message, conversationHistory);
     }
   } catch (error) {
     console.error('❌ Error in AI assistant:', error);
@@ -37,6 +43,28 @@ async function handleInboundMessage(phoneNumber, message) {
       response: "I'm having trouble processing that. Please contact your broker directly.",
       escalate: true
     };
+  }
+}
+
+/**
+ * Get conversation history for context
+ */
+async function getConversationHistory(conversationId, limit = 10) {
+  try {
+    const result = await pool.query(
+      `SELECT direction, content, created_at 
+       FROM communication_log 
+       WHERE conversation_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT $2`,
+      [conversationId, limit]
+    );
+    
+    // Return in chronological order (oldest first)
+    return result.rows.reverse();
+  } catch (error) {
+    console.error('Error fetching conversation history:', error);
+    return [];
   }
 }
 
@@ -91,7 +119,7 @@ async function identifySender(phoneNumber) {
 /**
  * Handle customer message
  */
-async function handleCustomerMessage(phoneNumber, message) {
+async function handleCustomerMessage(phoneNumber, message, conversationHistory = []) {
   // Check if this is a quote request
   const msg = message.toLowerCase();
   const quoteKeywords = ['quote', 'price', 'cost', 'how much', 'estimate', 'shipping', 'ship my', 'transport'];
@@ -124,15 +152,13 @@ async function handleCustomerMessage(phoneNumber, message) {
     };
   }
 
-  // Use AI to understand what customer wants
-  const intent = await analyzeIntent(message, loads.rows);
+  // Use AI to understand what customer wants (with conversation history)
+  const intent = await analyzeIntent(message, loads.rows, 'CUSTOMER', conversationHistory);
 
-  // Generate response based on intent
-  const response = await generateCustomerResponse(intent, loads.rows[0], message);
+  // Generate response based on intent (with conversation history)
+  const response = await generateCustomerResponse(intent, loads.rows[0], message, conversationHistory);
 
-  // Send response
-  await sendSMS(phoneNumber, response.response, loads.rows[0].id);
-
+  // Note: SMS sending is now handled in the webhook handler
   return {
     response: response.response,
     escalate: response.escalate || false
@@ -142,7 +168,7 @@ async function handleCustomerMessage(phoneNumber, message) {
 /**
  * Handle carrier message
  */
-async function handleCarrierMessage(phoneNumber, message) {
+async function handleCarrierMessage(phoneNumber, message, conversationHistory = []) {
   // Find loads for this carrier
   const loads = await pool.query(
     `SELECT * FROM loads 
@@ -160,11 +186,11 @@ async function handleCarrierMessage(phoneNumber, message) {
     };
   }
 
-  // Use AI to understand carrier message
-  const intent = await analyzeIntent(message, loads.rows, 'CARRIER');
+  // Use AI to understand carrier message (with conversation history)
+  const intent = await analyzeIntent(message, loads.rows, 'CARRIER', conversationHistory);
 
   // Generate response or update load
-  const response = await generateCarrierResponse(intent, loads.rows, message);
+  const response = await generateCarrierResponse(intent, loads.rows, message, conversationHistory);
 
   // If carrier provided an update, update the load
   if (intent.type === 'STATUS_UPDATE' && intent.loadId) {
@@ -176,8 +202,7 @@ async function handleCarrierMessage(phoneNumber, message) {
     );
   }
 
-  await sendSMS(phoneNumber, response.response, loads.rows[0]?.id);
-
+  // Note: SMS sending is now handled in the webhook handler
   return {
     response: response.response,
     escalate: response.escalate || false
@@ -187,7 +212,7 @@ async function handleCarrierMessage(phoneNumber, message) {
 /**
  * Handle unknown sender
  */
-async function handleUnknownSender(phoneNumber, message) {
+async function handleUnknownSender(phoneNumber, message, conversationHistory = []) {
   const msg = message.toLowerCase();
   
   // Check if this is a quote request
@@ -218,7 +243,7 @@ async function handleUnknownSender(phoneNumber, message) {
         `UPDATE customers SET phone = $1 WHERE id = $2`,
         [phoneNumber, loads.rows[0].customer_id]
       );
-      return await handleCustomerMessage(phoneNumber, message);
+      return await handleCustomerMessage(phoneNumber, message, conversationHistory);
     }
   }
 
@@ -235,7 +260,7 @@ async function handleUnknownSender(phoneNumber, message) {
 /**
  * Analyze message intent using OpenAI
  */
-async function analyzeIntent(message, loads, senderType = 'CUSTOMER') {
+async function analyzeIntent(message, loads, senderType = 'CUSTOMER', conversationHistory = []) {
   if (!OPENAI_API_KEY) {
     // Fallback to simple keyword matching if no OpenAI key
     return simpleIntentAnalysis(message, loads);
@@ -250,11 +275,22 @@ async function analyzeIntent(message, loads, senderType = 'CUSTOMER') {
       delivery_date: l.delivery_date
     }));
 
+    // Build conversation history context
+    let historyContext = '';
+    if (conversationHistory.length > 0) {
+      historyContext = '\n\nPrevious conversation:\n';
+      conversationHistory.slice(-5).forEach(msg => {
+        const role = msg.direction === 'INBOUND' ? 'Customer' : 'Assistant';
+        historyContext += `${role}: ${msg.content}\n`;
+      });
+    }
+
     const prompt = senderType === 'CUSTOMER' 
       ? `You are an AI assistant for an auto transport broker. A customer sent this message: "${message}"
 
 Available loads for this customer:
 ${JSON.stringify(loadContext, null, 2)}
+${historyContext}
 
 Determine the intent. Possible intents:
 - STATUS_INQUIRY: Asking about status/ETA
@@ -265,11 +301,13 @@ Determine the intent. Possible intents:
 - QUOTE_REQUEST: Asking for a shipping quote/price
 - GENERAL_QUESTION: Other questions
 
+Use conversation history to understand context and provide more relevant responses.
 Respond with JSON: {"type": "INTENT_TYPE", "load_id": "order_id_if_applicable"}`
       : `You are an AI assistant for an auto transport broker. A carrier sent this message: "${message}"
 
 Available loads for this carrier:
 ${JSON.stringify(loadContext, null, 2)}
+${historyContext}
 
 Determine the intent. Possible intents:
 - STATUS_UPDATE: Providing status update
@@ -279,6 +317,7 @@ Determine the intent. Possible intents:
 
 If status update, extract: {"type": "STATUS_UPDATE", "status": "PICKED_UP|IN_TRANSIT|DELIVERED", "load_id": "order_id"}
 
+Use conversation history to understand context.
 Respond with JSON only.`;
 
     const response = await axios.post(
@@ -286,7 +325,7 @@ Respond with JSON only.`;
       {
         model: 'gpt-3.5-turbo',
         messages: [
-          { role: 'system', content: 'You are a helpful assistant for an auto transport broker.' },
+          { role: 'system', content: 'You are a helpful assistant for an auto transport broker. Use conversation history to provide context-aware responses.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.3,
@@ -336,12 +375,69 @@ function simpleIntentAnalysis(message, loads) {
 /**
  * Generate response for customer
  */
-async function generateCustomerResponse(intent, load, originalMessage) {
+async function generateCustomerResponse(intent, load, originalMessage, conversationHistory = []) {
   // Handle quote requests
   if (intent.type === 'QUOTE_REQUEST') {
     return await handleQuoteRequest(null, originalMessage);
   }
   
+  // Use OpenAI to generate a more natural, context-aware response if available
+  if (OPENAI_API_KEY && conversationHistory.length > 0) {
+    try {
+      const historyContext = conversationHistory.slice(-3).map(msg => 
+        `${msg.direction === 'INBOUND' ? 'Customer' : 'Assistant'}: ${msg.content}`
+      ).join('\n');
+
+      const loadInfo = {
+        vehicle: `${load.vehicle_year} ${load.vehicle_make} ${load.vehicle_model}`,
+        order_id: load.order_id,
+        status: load.status,
+        delivery_date: load.delivery_date,
+        carrier_name: load.carrier_name,
+        bol_url: load.bol_url
+      };
+
+      const prompt = `You are a friendly AI assistant for an auto transport broker. Generate a helpful, professional response to a customer's question.
+
+Customer's question: "${originalMessage}"
+Intent: ${intent.type}
+
+Load information:
+${JSON.stringify(loadInfo, null, 2)}
+
+Recent conversation:
+${historyContext}
+
+Generate a friendly, concise response (max 160 characters for SMS). Be helpful and professional.`;
+
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-3.5-turbo',
+          messages: [
+            { role: 'system', content: 'You are a helpful, friendly assistant for an auto transport broker. Keep responses concise and professional.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 150
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const aiResponse = response.data.choices[0].message.content.trim();
+      return { response: aiResponse, escalate: false };
+    } catch (error) {
+      console.error('Error generating AI response:', error.message);
+      // Fall through to template-based response
+    }
+  }
+  
+  // Fallback to template-based responses
   let response = '';
 
   switch (intent.type) {
@@ -382,7 +478,7 @@ async function generateCustomerResponse(intent, load, originalMessage) {
 /**
  * Generate response for carrier
  */
-async function generateCarrierResponse(intent, loads, originalMessage) {
+async function generateCarrierResponse(intent, loads, originalMessage, conversationHistory = []) {
   if (intent.type === 'STATUS_UPDATE') {
     return {
       response: `Thanks for the update! I've logged it. If you need anything else, just text back.`,

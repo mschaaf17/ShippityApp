@@ -88,30 +88,47 @@ router.post('/twilio', async (req, res) => {
     const { From, Body } = req.body;
     console.log(`📱 Incoming SMS from ${From}: ${Body}`);
     
+    // Get or create conversation for this phone number
+    const conversation = await getOrCreateConversation(From);
+    
     // Log the incoming message
     await pool.query(
-      'INSERT INTO communication_log (customer_id, type, direction, recipient, content, status) VALUES ($1, $2, $3, $4, $5, $6)',
-      [null, 'SMS', 'INBOUND', From, Body, 'DELIVERED']
+      'INSERT INTO communication_log (conversation_id, type, direction, recipient, content, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [conversation.id, 'SMS', 'INBOUND', From, Body, 'DELIVERED', new Date()]
     );
     
-    // Process with AI assistant
-    const aiResponse = await handleInboundMessage(From, Body);
+    // Update conversation last message time
+    await pool.query(
+      'UPDATE conversations SET last_message_at = CURRENT_TIMESTAMP WHERE id = $1',
+      [conversation.id]
+    );
+    
+    // Process with AI assistant (pass conversation for context)
+    const aiResponse = await handleInboundMessage(From, Body, conversation.id);
+    
+    // Send the SMS response via Twilio
+    const { sendSMS } = require('../services/twilio');
+    const smsResult = await sendSMS(From, aiResponse.response, conversation.load_id || null);
     
     // Log the response
     await pool.query(
-      'INSERT INTO communication_log (type, direction, recipient, content, status, sent_at) VALUES ($1, $2, $3, $4, $5, $6)',
-      ['SMS', 'OUTBOUND', From, aiResponse.response, 'SENT', new Date()]
+      'INSERT INTO communication_log (conversation_id, load_id, type, direction, recipient, content, status, sent_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [conversation.id, conversation.load_id, 'SMS', 'OUTBOUND', From, aiResponse.response, smsResult.success ? 'SENT' : 'FAILED', new Date()]
     );
     
     // If AI says to escalate, log it for broker review
     if (aiResponse.escalate) {
       await pool.query(
-        'INSERT INTO activity_log (action, description) VALUES ($1, $2)',
-        ['ESCALATE_TO_BROKER', `Message from ${From} needs broker attention: ${Body}`]
+        'UPDATE conversations SET status = $1 WHERE id = $2',
+        ['ESCALATED', conversation.id]
+      );
+      await pool.query(
+        'INSERT INTO activity_log (load_id, action, description) VALUES ($1, $2, $3)',
+        [conversation.load_id, 'ESCALATE_TO_BROKER', `Message from ${From} needs broker attention: ${Body}`]
       );
     }
     
-    // Twilio expects TwiML response
+    // Twilio expects TwiML response (empty since we're sending async)
     res.type('text/xml');
     res.send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     
@@ -120,6 +137,93 @@ router.post('/twilio', async (req, res) => {
     res.status(500).send('Error processing SMS');
   }
 });
+
+/**
+ * Get or create a conversation for a phone number
+ */
+async function getOrCreateConversation(phoneNumber) {
+  // Try to find existing active conversation
+  let result = await pool.query(
+    `SELECT * FROM conversations 
+     WHERE phone_number = $1 
+     AND status = 'ACTIVE'
+     ORDER BY last_message_at DESC
+     LIMIT 1`,
+    [phoneNumber]
+  );
+  
+  if (result.rows.length > 0) {
+    return result.rows[0];
+  }
+  
+  // Try to find any conversation (even resolved ones) to get participant info
+  result = await pool.query(
+    `SELECT * FROM conversations 
+     WHERE phone_number = $1 
+     ORDER BY last_message_at DESC
+     LIMIT 1`,
+    [phoneNumber]
+  );
+  
+  let participantType = 'UNKNOWN';
+  let participantName = null;
+  let loadId = null;
+  
+  if (result.rows.length > 0) {
+    participantType = result.rows[0].participant_type;
+    participantName = result.rows[0].participant_name;
+  } else {
+    // Try to identify from database
+    const customerResult = await pool.query(
+      `SELECT id, name FROM customers WHERE phone = $1 LIMIT 1`,
+      [phoneNumber]
+    );
+    
+    if (customerResult.rows.length > 0) {
+      participantType = 'CUSTOMER';
+      participantName = customerResult.rows[0].name;
+      
+      // Find their active load
+      const loadResult = await pool.query(
+        `SELECT id FROM loads 
+         WHERE customer_id = $1 
+         AND status NOT IN ('COMPLETED', 'CANCELLED')
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [customerResult.rows[0].id]
+      );
+      
+      if (loadResult.rows.length > 0) {
+        loadId = loadResult.rows[0].id;
+      }
+    } else {
+      // Check if it's a carrier
+      const carrierResult = await pool.query(
+        `SELECT id, carrier_name FROM loads 
+         WHERE (carrier_phone = $1 OR driver_phone = $1)
+         AND status NOT IN ('COMPLETED', 'CANCELLED')
+         LIMIT 1`,
+        [phoneNumber]
+      );
+      
+      if (carrierResult.rows.length > 0) {
+        participantType = 'CARRIER';
+        participantName = carrierResult.rows[0].carrier_name;
+        loadId = carrierResult.rows[0].id;
+      }
+    }
+  }
+  
+  // Create new conversation
+  const insertResult = await pool.query(
+    `INSERT INTO conversations (phone_number, participant_type, participant_name, load_id, status)
+     VALUES ($1, $2, $3, $4, 'ACTIVE')
+     RETURNING *`,
+    [phoneNumber, participantType, participantName, loadId]
+  );
+  
+  return insertResult.rows[0];
+}
 
 // Helper functions
 
