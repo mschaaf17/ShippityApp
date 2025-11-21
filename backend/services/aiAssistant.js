@@ -223,31 +223,81 @@ async function handleUnknownSender(phoneNumber, message, conversationHistory = [
     return await handleQuoteRequest(phoneNumber, message);
   }
   
-  // Use AI to determine if this is a customer or carrier inquiry
-  const analysis = await analyzeUnknownSender(message);
-
-  if (analysis.type === 'CUSTOMER') {
-    // Try to find load by vehicle description
-    const loads = await pool.query(
-      `SELECT l.* FROM loads l
-       JOIN customers c ON l.customer_id = c.id
-       WHERE (l.vehicle_make ILIKE $1 OR l.vehicle_model ILIKE $1)
+  // Check if they're asking about a shipment (status, pickup, delivery, ETA, BOL)
+  const statusKeywords = ['status', 'picked up', 'pickup', 'delivery', 'delivered', 'eta', 'when', 'where', 'bol', 'bill of lading'];
+  const isStatusInquiry = statusKeywords.some(keyword => msg.includes(keyword));
+  
+  if (isStatusInquiry) {
+    // Try to find ANY active load (maybe phone number isn't in customer table yet)
+    // First, try to find by phone in customers table
+    let loads = await pool.query(
+      `SELECT l.*, c.name as customer_name, c.phone
+       FROM loads l
+       LEFT JOIN customers c ON l.customer_id = c.id
+       WHERE (c.phone = $1 OR l.carrier_phone = $1 OR l.driver_phone = $1)
        AND l.status NOT IN ('COMPLETED', 'CANCELLED')
-       LIMIT 1`,
-      [`%${analysis.vehicle || ''}%`]
+       ORDER BY l.created_at DESC
+       LIMIT 5`,
+      [phoneNumber]
     );
 
+    // If found loads, treat as customer and update their phone if needed
     if (loads.rows.length > 0) {
-      // Update customer phone number
-      await pool.query(
-        `UPDATE customers SET phone = $1 WHERE id = $2`,
-        [phoneNumber, loads.rows[0].customer_id]
-      );
-      return await handleCustomerMessage(phoneNumber, message, conversationHistory);
+      // Update customer phone if it exists
+      if (loads.rows[0].customer_id && loads.rows[0].phone !== phoneNumber) {
+        await pool.query(
+          `UPDATE customers SET phone = $1 WHERE id = $2`,
+          [phoneNumber, loads.rows[0].customer_id]
+        );
+      }
+      // Process as customer message
+      const intent = await analyzeIntent(message, loads.rows, 'CUSTOMER', conversationHistory);
+      const response = await generateCustomerResponse(intent, loads.rows[0], message, conversationHistory);
+      return response;
     }
+
+    // Try to find by vehicle description in message using OpenAI or keywords
+    const vehicleKeywords = ['honda', 'toyota', 'ford', 'tesla', 'bmw', 'mercedes', 'chevrolet', 'nissan', 'subaru', 'jeep', 'dodge', 'acura', 'lexus', 'audi', 'volkswagen', 'hyundai', 'kia', 'mazda', 'car', 'vehicle', 'truck', 'suv'];
+    const vehicleMatch = vehicleKeywords.find(v => msg.includes(v));
+    
+    if (vehicleMatch) {
+      // Search for loads with this vehicle make/model
+      loads = await pool.query(
+        `SELECT l.*, c.name as customer_name, c.phone
+         FROM loads l
+         LEFT JOIN customers c ON l.customer_id = c.id
+         WHERE (l.vehicle_make ILIKE $1 OR l.vehicle_model ILIKE $1)
+         AND l.status NOT IN ('COMPLETED', 'CANCELLED')
+         ORDER BY l.created_at DESC
+         LIMIT 5`,
+        [`%${vehicleMatch}%`]
+      );
+
+      if (loads.rows.length > 0) {
+        // Update customer phone and process
+        if (loads.rows[0].customer_id) {
+          await pool.query(
+            `UPDATE customers SET phone = $1 WHERE id = $2`,
+            [phoneNumber, loads.rows[0].customer_id]
+          );
+        }
+        const intent = await analyzeIntent(message, loads.rows, 'CUSTOMER', conversationHistory);
+        const response = await generateCustomerResponse(intent, loads.rows[0], message, conversationHistory);
+        return response;
+      }
+    }
+
+    // If they're asking about status but we can't find their load
+    return {
+      response: "I couldn't find any active shipments for this number. Please provide:\n\n" +
+               "• Your order number, OR\n" +
+               "• Your vehicle make/model and pickup location\n\n" +
+               "I can help you check the status once I locate your shipment!",
+      escalate: false
+    };
   }
 
-  // Ask who they are or offer quote
+  // Generic response for other inquiries
   return {
     response: "Hi! I'm the automated assistant. I can help with:\n\n" +
              "📦 Getting a shipping quote\n" +
