@@ -206,6 +206,16 @@ function ApiDocs() {
                   Webhooks
                 </button>
                 <button
+                  onClick={() => setActiveSection('api-calls')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-all font-medium ${
+                    activeSection === 'api-calls'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
+                      : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
+                >
+                  API Calls Reference
+                </button>
+                <button
                   onClick={() => setActiveSection('examples')}
                   className={`w-full text-left px-4 py-2 rounded-lg transition-all font-medium ${
                     activeSection === 'examples'
@@ -434,6 +444,57 @@ Content-Type: application/json
                     </div>
                   </div>
 
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-3">Manual Orders Setup</h3>
+                    <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+                      <p className="text-sm text-slate-700 mb-4">
+                        For orders created manually in Super Dispatch (not via API), you need to add a <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">lot_number</code> to enable webhooks:
+                      </p>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <div className="font-semibold text-slate-900 mb-2">Option 1: Add `lot_number` in Super Dispatch (Recommended)</div>
+                          <ol className="list-decimal list-inside text-sm text-slate-700 space-y-2 ml-2">
+                            <li>Open the order in Super Dispatch UI</li>
+                            <li>Edit the vehicle information</li>
+                            <li>Add <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">lot_number</code> field with your reference ID (e.g., "{companyName.toUpperCase().substring(0, 3)}-12345")</li>
+                            <li>Save the order</li>
+                          </ol>
+                          <p className="text-xs text-slate-600 mt-2 italic">
+                            When Super Dispatch sends status updates, the <code className="bg-blue-100 px-1 py-0.5 rounded text-xs font-mono">lot_number</code> automatically becomes the <code className="bg-blue-100 px-1 py-0.5 rounded text-xs font-mono">reference_id</code> in webhooks sent to {replaceCompanyName('partner')}.
+                          </p>
+                        </div>
+
+                        <div>
+                          <div className="font-semibold text-slate-900 mb-2">Option 2: Add `reference_id` via API</div>
+                          <p className="text-sm text-slate-700 mb-2">
+                            If the order is already created, you can add a <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">reference_id</code> using:
+                          </p>
+                          <pre className="bg-slate-900 text-slate-100 p-3 rounded-lg border border-slate-700 text-xs mt-2">
+{`PUT ${baseUrl}/api/${companyName.toLowerCase()}/loads/:orderId/reference-id
+Content-Type: application/json
+
+{
+  "reference_id": "${companyName.toUpperCase().substring(0, 3)}-12345"
+}`}
+                          </pre>
+                          <p className="text-xs text-slate-600 mt-2 italic">
+                            Once <code className="bg-blue-100 px-1 py-0.5 rounded text-xs font-mono">reference_id</code> is set, webhooks will be sent automatically for all future status updates.
+                          </p>
+                        </div>
+
+                        <div className="bg-blue-100 border-l-4 border-blue-500 p-3 rounded-r">
+                          <p className="text-sm font-semibold text-blue-900 mb-1">💡 Important:</p>
+                          <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                            <li>Webhooks are only sent for orders that have a <code className="bg-blue-200 px-1 py-0.5 rounded font-mono">reference_id</code></li>
+                            <li>Orders created via API automatically get webhooks (from <code className="bg-blue-200 px-1 py-0.5 rounded font-mono">issue_number</code>)</li>
+                            <li>Manual orders need <code className="bg-blue-200 px-1 py-0.5 rounded font-mono">lot_number</code> (Option 1) or <code className="bg-blue-200 px-1 py-0.5 rounded font-mono">reference_id</code> (Option 2) to enable webhooks</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <h3 className="text-xl font-semibold text-slate-900 mb-3">Super Dispatch Webhooks</h3>
                     <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
@@ -444,6 +505,275 @@ Content-Type: application/json
                         POST {baseUrl}/api/webhooks/superdispatch
                       </code>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* API Calls Reference Section */}
+            {activeSection === 'api-calls' && (
+              <div className="space-y-6">
+                <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">API Calls Reference</h2>
+                  <div className="h-1 w-24 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full mb-6"></div>
+                  <p className="text-slate-600 mb-6">
+                    Quick reference for all API calls you can use for testing and managing orders, webhooks, and manual orders.
+                  </p>
+
+                  {/* Health & Status Checks */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-4">Health & Status Checks</h3>
+                    <div className="space-y-3">
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-blue-600">GET {baseUrl}/health</code>
+                          <button
+                            onClick={() => copyToClipboard(`curl ${baseUrl}/health`, 'health-check')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all"
+                          >
+                            {copiedCode === 'health-check' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600">Basic health check</p>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-blue-600">GET {baseUrl}/api/health</code>
+                          <button
+                            onClick={() => copyToClipboard(`curl ${baseUrl}/api/health`, 'api-health')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all"
+                          >
+                            {copiedCode === 'api-health' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600">Comprehensive health check (database, Super Dispatch, Twilio, OpenAI)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Webhook Configuration */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-4">Webhook Configuration</h3>
+                    <div className="space-y-3">
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">GET {baseUrl}{replaceUrlCompanyName('/api/kingbee/webhook-config')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl ${baseUrl}/api/kingbee/webhook-config`, 'get-webhook-config')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'get-webhook-config' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2">Get current webhook configuration</p>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">POST {baseUrl}{replaceUrlCompanyName('/api/kingbee/webhook-config')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl -X POST ${baseUrl}/api/kingbee/webhook-config \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "webhook_url": "https://your-domain.com/webhooks/${companyName.toLowerCase()}",\n    "secret_token": "optional-secret"\n  }'`, 'set-webhook-config')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'set-webhook-config' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mb-2 mt-2">Configure webhook URL</p>
+                        <pre className="bg-slate-900 text-slate-100 p-2 rounded text-xs mt-2 overflow-x-auto">
+{`{
+  "webhook_url": "https://your-domain.com/webhooks/${companyName.toLowerCase()}",
+  "secret_token": "optional-secret"
+}`}
+                        </pre>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">GET {baseUrl}{replaceUrlCompanyName('/api/kingbee/webhook-deliveries')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl "${baseUrl}/api/kingbee/webhook-deliveries?limit=10"`, 'webhook-deliveries')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'webhook-deliveries' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2">View webhook delivery logs (add ?limit=10 or ?status=SUCCESS)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Manual Orders Setup */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-4">Manual Orders Setup</h3>
+                    <div className="space-y-3">
+                      <div className="bg-blue-50 rounded-lg border border-blue-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">PUT {baseUrl}{replaceUrlCompanyName('/api/kingbee/loads/:orderId/reference-id')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl -X PUT "${baseUrl}/api/kingbee/loads/KTESTFL/reference-id" \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "reference_id": "${companyName.toUpperCase().substring(0, 3)}-12345"\n  }'`, 'set-reference-id')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'set-reference-id' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-700 mb-2 mt-2">Add/update reference_id for a manually created order (enables webhooks)</p>
+                        <pre className="bg-slate-900 text-slate-100 p-2 rounded text-xs mt-2 overflow-x-auto">
+{`{
+  "reference_id": "${companyName.toUpperCase().substring(0, 3)}-12345"
+}`}
+                        </pre>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-blue-600">POST {baseUrl}/api/loads/superdispatch/sync/:guid</code>
+                          <button
+                            onClick={() => copyToClipboard(`curl -X POST "${baseUrl}/api/loads/superdispatch/sync/219e7b23-2627-43fc-8f9b-e2e7d0bcf271"`, 'sync-order')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all"
+                          >
+                            {copiedCode === 'sync-order' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600">Sync order from Super Dispatch by GUID (use GUID from Super Dispatch URL)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Testing & Debugging */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-4">Testing & Debugging</h3>
+                    <div className="space-y-3">
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">GET {baseUrl}{replaceUrlCompanyName('/api/loads/:orderId/preview-kingbee')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl "${baseUrl}/api/loads/KTESTFL/preview-kingbee"`, 'preview-webhook')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'preview-webhook' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2">Preview what would be sent to {replaceCompanyName('partner')} via webhook for this order</p>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">POST {baseUrl}{replaceUrlCompanyName('/api/kingbee/loads/:orderId/send-webhook')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl -X POST "${baseUrl}/api/kingbee/loads/KTESTFL/send-webhook"`, 'manual-webhook')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'manual-webhook' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2">Manually trigger webhook (uses database data)</p>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">POST {baseUrl}{replaceUrlCompanyName('/api/kingbee/loads/:orderId/send-webhook?sync=true&guid=GUID')}</code>
+                          </div>
+                          <button
+                            onClick={() => copyToClipboard(`curl -X POST "${baseUrl}/api/kingbee/loads/KTESTFL/send-webhook?sync=true&guid=219e7b23-2627-43fc-8f9b-e2e7d0bcf271"`, 'sync-webhook')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'sync-webhook' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-2">Manually trigger webhook after syncing latest data from Super Dispatch</p>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-blue-600">GET {baseUrl}/api/loads/:orderId</code>
+                          <button
+                            onClick={() => copyToClipboard(`curl "${baseUrl}/api/loads/KTESTFL"`, 'get-load')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all"
+                          >
+                            {copiedCode === 'get-load' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600">Get order details by order_id or UUID</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Order Management */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-4">Order Management</h3>
+                    <div className="space-y-3">
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-start justify-between mb-2 gap-2">
+                          <div className="flex-1">
+                            <code className="text-sm font-semibold text-blue-600 block mb-1">POST {baseUrl}{replaceUrlCompanyName('/api/kingbee/orders')}</code>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const prefix = companyName.toUpperCase().substring(0, 3);
+                              copyToClipboard(`curl -X POST ${baseUrl}/api/kingbee/orders \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "vehicles": [{"vin": "1FTBR1C82MKA69174", "issue_number": "${prefix}-12345"}],\n    "pickup": {"address": "123 Main St, City, ST 12345", "pickup_notes": "Optional"},\n    "delivery": {"address": "456 Oak Ave, City, ST 12345", "delivery_notes": "Optional"}\n  }'`, 'submit-order');
+                            }}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
+                          >
+                            {copiedCode === 'submit-order' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600 mb-2 mt-2">Submit order(s) from {replaceCompanyName('partner')} (creates in Super Dispatch automatically)</p>
+                        <pre className="bg-slate-900 text-slate-100 p-2 rounded text-xs mt-2 overflow-x-auto">
+{`{
+  "vehicles": [{
+    "vin": "1FTBR1C82MKA69174",
+    "issue_number": "${companyName.toUpperCase().substring(0, 3)}-12345"
+  }],
+  "pickup": {
+    "address": "123 Main St, City, ST 12345",
+    "pickup_notes": "Optional"
+  },
+  "delivery": {
+    "address": "456 Oak Ave, City, ST 12345",
+    "delivery_notes": "Optional"
+  }
+}`}
+                        </pre>
+                      </div>
+
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <code className="text-sm font-semibold text-blue-600">GET {baseUrl}/api/loads</code>
+                          <button
+                            onClick={() => copyToClipboard(`curl "${baseUrl}/api/loads?limit=10"`, 'list-loads')}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all"
+                          >
+                            {copiedCode === 'list-loads' ? '✓ Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-600">List all orders (add ?status=NEW or ?limit=10 for filtering)</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tips */}
+                  <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r">
+                    <p className="text-sm font-semibold text-blue-900 mb-2">💡 Tips:</p>
+                    <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+                      <li>Replace <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">:orderId</code> with actual order ID (e.g., "KTESTFL")</li>
+                      <li>Replace <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">GUID</code> with Super Dispatch GUID from URL</li>
+                      <li>Add <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">| python3 -m json.tool</code> for formatted JSON output</li>
+                      <li>For production: Replace <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">{baseUrl}</code> with your actual domain</li>
+                    </ul>
                   </div>
                 </div>
               </div>

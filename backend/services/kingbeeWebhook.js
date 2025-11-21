@@ -13,11 +13,11 @@ const pool = require('../config/database');
  */
 function mapStatusToKingbee(superDispatchStatus) {
   const statusMap = {
-    'NEW': 'assigned',
-    'PENDING': 'assigned',
-    'DISPATCHED': 'assigned',
-    'ASSIGNED': 'assigned',
-    'ACCEPTED': 'assigned',  // Accepted orders are assigned to carriers
+    'NEW': 'pending',           // Submitted but carrier not yet assigned
+    'PENDING': 'pending',       // Submitted but carrier not yet assigned
+    'DISPATCHED': 'pending',    // Submitted but carrier not yet assigned
+    'ASSIGNED': 'assigned',     // Carrier has been assigned
+    'ACCEPTED': 'assigned',     // Carrier has accepted the order
     'PICKED_UP': 'picked_up',
     // 'IN_TRANSIT': 'in_transit',
     'DELIVERED': 'delivered',

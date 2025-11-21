@@ -121,7 +121,8 @@ app.get('/api/docs', (req, res) => {
           bol_link: 'https://...' // Available when provided by Super Dispatch
         },
         status_mapping: {
-          'assigned': ['NEW', 'PENDING', 'DISPATCHED', 'ASSIGNED', 'ACCEPTED'],
+          'pending': ['NEW', 'PENDING', 'DISPATCHED'],  // Submitted but carrier not yet assigned
+          'assigned': ['ASSIGNED', 'ACCEPTED'],          // Carrier has been assigned/accepted
           'picked_up': ['PICKED_UP'],
           // 'in_transit': ['IN_TRANSIT'],
           'delivered': ['DELIVERED', 'COMPLETED'],

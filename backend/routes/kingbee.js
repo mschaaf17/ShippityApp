@@ -147,14 +147,37 @@ router.put('/loads/:loadId/reference-id', async (req, res) => {
       });
     }
     
-    // Update load with reference_id
-    const result = await pool.query(
+    // Try to find load by order_id (VARCHAR) first, then by id (UUID)
+    // Use separate queries to avoid type casting issues with OR conditions
+    let result;
+    
+    // First, try to match by order_id (VARCHAR) - most common case
+    result = await pool.query(
       `UPDATE loads 
        SET reference_id = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 OR order_id = $2
+       WHERE order_id = $2
        RETURNING *`,
       [reference_id, loadId]
     );
+    
+    // If no match by order_id, try matching by UUID
+    if (result.rows.length === 0) {
+      // Check if loadId looks like a UUID (36 chars with hyphens)
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidPattern.test(loadId)) {
+        try {
+          result = await pool.query(
+            `UPDATE loads 
+             SET reference_id = $1, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2::uuid
+             RETURNING *`,
+            [reference_id, loadId]
+          );
+        } catch (uuidError) {
+          // UUID cast failed, leave result empty
+        }
+      }
+    }
     
     if (result.rows.length === 0) {
       return res.status(404).json({
