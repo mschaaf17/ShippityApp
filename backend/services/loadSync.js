@@ -126,7 +126,37 @@ async function syncLoadFromSuperDispatch(superDispatchData) {
   if (bolUrl) {
     console.log('✅ BOL URL found in Super Dispatch response:', bolUrl.substring(0, 50) + '...');
   } else {
-    console.log('ℹ️ No BOL URL in Super Dispatch response (may be available in next update)');
+    console.log('ℹ️ No BOL URL in Super Dispatch response');
+    
+    // If order is delivered and we don't have a BOL URL, try fetching it from the dedicated endpoint
+    // This handles cases where test orders have BOLs in the UI but not in the API response
+    if (normalizedStatus === 'DELIVERED' && guid) {
+      console.log('🔍 Order is DELIVERED but no BOL URL in response. Attempting to fetch from BOL endpoint...');
+      try {
+        const superDispatch = require('./superdispatch');
+        const bolResponse = await superDispatch.getBOL(guid);
+        
+        // The BOL endpoint might return different structures, check for URL fields
+        if (bolResponse && typeof bolResponse === 'object') {
+          const bolData = bolResponse.data?.object || bolResponse.data || bolResponse;
+          bolUrl = bolData.pdf_bol_url_with_template || 
+                   bolData.pdf_bol_url || 
+                   bolData.online_bol_url || 
+                   bolData.bol_url ||
+                   bolData.url; // Sometimes the BOL endpoint returns just a 'url' field
+          
+          if (bolUrl) {
+            console.log('✅ BOL URL fetched from dedicated endpoint:', bolUrl.substring(0, 50) + '...');
+          } else {
+            console.log('ℹ️ BOL endpoint returned data but no URL found (BOL may not be finalized yet)');
+          }
+        }
+      } catch (bolError) {
+        // If BOL fetch fails, that's okay - the BOL might not be finalized yet
+        // This is common for test orders where BOLs exist in UI but not in API
+        console.log('ℹ️ Could not fetch BOL from dedicated endpoint (this is normal for test orders):', bolError.message);
+      }
+    }
   }
   
   // Use order number (e.g., "BMW1119OR" or "K111925FL1") or order_id or guid
