@@ -557,10 +557,9 @@ async function createKingbeeOrders(kingbeeData) {
         guid: orderData.guid,
         vehicles: vehicleGroup.map(v => ({
           vin: v.vin,
-          issue_number: v.issue_number
+          issue_number: v.issue_number // This will be returned as reference_id in webhook updates
         })),
-        issue_numbers: issueNumbers,
-        reference_id: referenceId,
+        issue_numbers: issueNumbers, // Array of all issue numbers in this order
         load_id: syncedLoad?.id || null, // Use optional chaining in case syncedLoad is undefined
         status: 'created'
       });
