@@ -405,11 +405,13 @@ Take pride in your work and communicate clearly — this industry runs on accoun
   };
   
   // Add notes if they exist
-  if (pickup.notes || pickup.pickup_notes) {
-    orderPayload.pickup.notes = pickup.notes || pickup.pickup_notes;
+  // Support both pickup_notes and notes (pickup_notes takes precedence if both provided)
+  if (pickup.pickup_notes || pickup.notes) {
+    orderPayload.pickup.notes = pickup.pickup_notes || pickup.notes;
   }
-  if (delivery.notes || delivery.delivery_notes) {
-    orderPayload.delivery.notes = delivery.notes || delivery.delivery_notes;
+  // Support both delivery_notes and notes (delivery_notes takes precedence if both provided)
+  if (delivery.delivery_notes || delivery.notes) {
+    orderPayload.delivery.notes = delivery.delivery_notes || delivery.notes;
   }
   
   // Add venue name if business_name exists

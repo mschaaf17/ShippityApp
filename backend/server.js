@@ -69,10 +69,12 @@ app.get('/api/docs', (req, res) => {
                 }
               ],
               pickup: {
-                address: '123 Main St, City, ST 12345'
+                address: '123 Main St, City, ST 12345',
+                pickup_notes: 'Optional pickup instructions'
               },
               delivery: {
-                address: '456 Oak Ave, City, ST 12345'
+                address: '456 Oak Ave, City, ST 12345',
+                delivery_notes: 'Optional delivery instructions'
               }
             }
           },

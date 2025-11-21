@@ -389,6 +389,20 @@ router.post('/loads/:loadId/send-webhook', async (req, res) => {
  *   ]
  * }
  */
+/**
+ * POST /api/kingbee/orders
+ * Submit order(s) from Kingbee to Shippity
+ * 
+ * Request body:
+ * - vehicles (required): Array of vehicles with vin and optional issue_number
+ * - pickup (required): Object with address (required) and optional pickup_notes
+ * - delivery (required): Object with address (required) and optional delivery_notes
+ * - state (optional): State code (will be extracted from delivery address if not provided)
+ * 
+ * Optional fields:
+ * - pickup.pickup_notes or pickup.notes: Pickup instructions/notes
+ * - delivery.delivery_notes or delivery.notes: Delivery instructions/notes
+ */
 router.post('/orders', async (req, res) => {
   try {
     const { vehicles, pickup, delivery, state } = req.body;
@@ -426,6 +440,10 @@ router.post('/orders', async (req, res) => {
     
     // State is optional - will be extracted from delivery address if not provided
     // Only validate if extraction fails (handled in createKingbeeOrders)
+    
+    // pickup_notes and delivery_notes are optional - will be passed to Super Dispatch if provided
+    // Both pickup.pickup_notes and pickup.notes are supported (pickup_notes takes precedence)
+    // Both delivery.delivery_notes and delivery.notes are supported (delivery_notes takes precedence)
     
     // Create orders in Super Dispatch
     const results = await createKingbeeOrders({
