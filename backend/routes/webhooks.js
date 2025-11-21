@@ -80,6 +80,38 @@ router.post('/superdispatch', async (req, res) => {
 });
 
 /**
+ * POST /api/webhooks/twilio/status
+ * Handles Twilio message status callbacks (delivery receipts)
+ */
+router.post('/twilio/status', async (req, res) => {
+  try {
+    const { MessageSid, MessageStatus, ErrorCode, ErrorMessage } = req.body;
+    console.log(`📊 SMS Status Update: ${MessageSid} - ${MessageStatus}`);
+    
+    if (ErrorCode) {
+      console.error(`❌ SMS Delivery Error: ${ErrorMessage} (Code: ${ErrorCode})`);
+    }
+    
+    // Update communication log with delivery status
+    await pool.query(
+      `UPDATE communication_log 
+       SET status = $1, delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END, 
+           error_message = CASE WHEN $3 IS NOT NULL THEN $3 ELSE error_message END
+       WHERE content LIKE '%' || $4 || '%' OR id IN (
+         SELECT id FROM communication_log WHERE type = 'SMS' AND direction = 'OUTBOUND' 
+         ORDER BY created_at DESC LIMIT 1
+       )`,
+      [MessageStatus.toUpperCase(), MessageStatus, ErrorMessage, MessageSid]
+    );
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error processing status callback:', error);
+    res.status(500).send('Error');
+  }
+});
+
+/**
  * POST /api/webhooks/twilio
  * Handles incoming SMS from Twilio
  */

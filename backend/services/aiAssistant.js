@@ -142,12 +142,47 @@ async function handleCustomerMessage(phoneNumber, message, conversationHistory =
   );
 
   if (loads.rows.length === 0) {
+    // Check if message contains VIN or Order ID
+    const vinOrOrderId = extractVinOrOrderId(message);
+    
+    if (vinOrOrderId) {
+      // Try to find load by VIN or Order ID
+      let loadResult = await pool.query(
+        `SELECT l.*, c.name as customer_name, c.phone
+         FROM loads l
+         LEFT JOIN customers c ON l.customer_id = c.id
+         WHERE (l.vehicle_vin = $1 OR l.order_id = $1)
+         AND l.status NOT IN ('COMPLETED', 'CANCELLED')
+         ORDER BY l.created_at DESC
+         LIMIT 1`,
+        [vinOrOrderId]
+      );
+      
+      if (loadResult.rows.length > 0) {
+        // Found it! Update customer phone if needed and process
+        if (loadResult.rows[0].customer_id && loadResult.rows[0].phone !== phoneNumber) {
+          await pool.query(
+            `UPDATE customers SET phone = $1 WHERE id = $2`,
+            [phoneNumber, loadResult.rows[0].customer_id]
+          );
+        }
+        const intent = await analyzeIntent(message, loadResult.rows, 'CUSTOMER', conversationHistory);
+        const response = await generateCustomerResponse(intent, loadResult.rows[0], message, conversationHistory);
+        return response;
+      }
+    }
+    
     // Check if they're asking for a quote
     if (isQuoteRequest) {
       return await handleQuoteRequest(phoneNumber, message);
     }
+    
+    // Ask for VIN or Order ID
     return {
-      response: "I couldn't find any active shipments for this number. Would you like a shipping quote? Just tell me your vehicle and pickup/delivery locations!",
+      response: "I couldn't find any shipments linked to this number. To check on a shipment, please provide:\n\n" +
+               "• Your Order ID/Number, OR\n" +
+               "• The VIN of the vehicle\n\n" +
+               "Once I have this, I can give you the current status!",
       escalate: false
     };
   }
@@ -287,12 +322,48 @@ async function handleUnknownSender(phoneNumber, message, conversationHistory = [
       }
     }
 
+    // Check if message contains VIN or Order ID
+    const vinOrOrderId = extractVinOrOrderId(message);
+    
+    if (vinOrOrderId) {
+      // Try to find load by VIN or Order ID
+      let loadResult = await pool.query(
+        `SELECT l.*, c.name as customer_name, c.phone
+         FROM loads l
+         LEFT JOIN customers c ON l.customer_id = c.id
+         WHERE (l.vehicle_vin = $1 OR l.order_id = $1)
+         AND l.status NOT IN ('COMPLETED', 'CANCELLED')
+         ORDER BY l.created_at DESC
+         LIMIT 1`,
+        [vinOrOrderId]
+      );
+      
+      if (loadResult.rows.length > 0) {
+        // Found it! Update customer phone if needed and process
+        if (loadResult.rows[0].customer_id && loadResult.rows[0].phone !== phoneNumber) {
+          await pool.query(
+            `UPDATE customers SET phone = $1 WHERE id = $2`,
+            [phoneNumber, loadResult.rows[0].customer_id]
+          );
+        }
+        const intent = await analyzeIntent(message, loadResult.rows, 'CUSTOMER', conversationHistory);
+        const response = await generateCustomerResponse(intent, loadResult.rows[0], message, conversationHistory);
+        return response;
+      } else {
+        return {
+          response: `I couldn't find a shipment with that VIN or Order ID (${vinOrOrderId}). Please double-check and try again, or contact your broker directly.`,
+          escalate: false
+        };
+      }
+    }
+    
     // If they're asking about status but we can't find their load
+    // Ask for VIN or Order ID since they might be a dispatcher/contact
     return {
-      response: "I couldn't find any active shipments for this number. Please provide:\n\n" +
-               "• Your order number, OR\n" +
-               "• Your vehicle make/model and pickup location\n\n" +
-               "I can help you check the status once I locate your shipment!",
+      response: "I couldn't find any shipments linked to this number. To check on a shipment, please provide:\n\n" +
+               "• Your Order ID/Number, OR\n" +
+               "• The VIN of the vehicle\n\n" +
+               "Once I have this, I can give you the current status!",
       escalate: false
     };
   }
@@ -558,6 +629,51 @@ async function analyzeUnknownSender(message) {
   const vehicle = vehicleKeywords.find(v => msg.includes(v));
   
   return { type: 'CUSTOMER', vehicle };
+}
+
+/**
+ * Extract VIN or Order ID from message
+ * VINs are typically 17 characters (alphanumeric)
+ * Order IDs can vary but often contain letters and numbers
+ */
+function extractVinOrOrderId(message) {
+  const msg = message.toUpperCase().trim();
+  
+  // VIN pattern: 17 alphanumeric characters (no I, O, Q)
+  const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/;
+  const vinMatch = msg.match(vinPattern);
+  if (vinMatch) {
+    return vinMatch[0];
+  }
+  
+  // Order ID patterns: 
+  // - Super Dispatch format: SD-12345, SD12345, K112025FL1, etc.
+  // - Common patterns: XXX-12345, XXX12345, or just alphanumeric strings 6+ chars
+  const orderIdPatterns = [
+    /\b(SD|K|KB|ORDER)[-]?[A-Z0-9]{4,}\b/i,  // SD-12345, K112025FL1, KB-12345
+    /\b[A-Z]{2,}[-]?[0-9]{4,}\b/,           // XX-12345 or XX12345
+    /\b[A-Z0-9]{6,}\b/                       // Any alphanumeric 6+ chars (catch-all)
+  ];
+  
+  for (const pattern of orderIdPatterns) {
+    const match = msg.match(pattern);
+    if (match) {
+      // Avoid matching phone numbers or common words
+      const matched = match[0];
+      if (matched.length >= 4 && !matched.match(/^[0-9]+$/)) {
+        return matched.toUpperCase();
+      }
+    }
+  }
+  
+  // Try to find after keywords like "order", "order id", "vin", etc.
+  const keywordPattern = /(?:order|order id|order number|order#|vin|v\.?i\.?n\.?)[:-\s]*([A-Z0-9\-]{4,})/i;
+  const keywordMatch = msg.match(keywordPattern);
+  if (keywordMatch && keywordMatch[1]) {
+    return keywordMatch[1].toUpperCase().replace(/[^\w\-]/g, '');
+  }
+  
+  return null;
 }
 
 /**

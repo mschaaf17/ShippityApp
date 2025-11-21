@@ -36,10 +36,16 @@ async function sendSMS(to, message, loadId = null) {
   }
 
   try {
+    // Build status callback URL if we have a base URL
+    const baseUrl = process.env.BASE_URL || process.env.RENDER_EXTERNAL_URL || '';
+    const statusCallback = baseUrl ? `${baseUrl}/api/webhooks/twilio/status` : undefined;
+
     const result = await client.messages.create({
       body: message,
       from: fromNumber,
-      to: to
+      to: to,
+      statusCallback: statusCallback, // Track delivery status
+      statusCallbackMethod: 'POST'
     });
 
     // Log to database
@@ -51,7 +57,8 @@ async function sendSMS(to, message, loadId = null) {
     );
 
     console.log(`✅ SMS sent to ${to}: ${result.sid}`);
-    return { success: true, sid: result.sid };
+    console.log(`   Message Status: ${result.status}, Price: ${result.price || 'N/A'}`);
+    return { success: true, sid: result.sid, status: result.status };
 
   } catch (error) {
     console.error(`❌ Error sending SMS to ${to}:`, error.message);
