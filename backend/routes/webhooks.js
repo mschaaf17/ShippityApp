@@ -104,26 +104,40 @@ router.post('/twilio/status', async (req, res) => {
     
     const dbStatus = statusMap[MessageStatus.toLowerCase()] || 'SENT';
     
+    // Build error message string (ensure it's a string, not null)
+    let errorMsgText = null;
+    if (ErrorMessage || ErrorCode) {
+      errorMsgText = ErrorMessage ? `${ErrorMessage} (Code: ${ErrorCode || 'N/A'})` : `Twilio Error Code: ${ErrorCode}`;
+    }
+    
     // Find by MessageSid stored in error_message field
     let updateResult = await pool.query(
       `UPDATE communication_log 
        SET status = $1,
            delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
-           error_message = CASE WHEN $3 IS NOT NULL THEN $3 ELSE error_message END
+           error_message = COALESCE($3, error_message)
        WHERE error_message LIKE $4 || '%'
        AND type = 'SMS' 
        AND direction = 'OUTBOUND'
        RETURNING id`,
-      [dbStatus, MessageStatus.toLowerCase(), ErrorMessage || null, `TWILIO_SID:${MessageSid}`]
+      [dbStatus, MessageStatus.toLowerCase(), errorMsgText, `TWILIO_SID:${MessageSid}`]
     );
     
     if (updateResult.rows.length === 0 && To) {
+      // Build error message with Twilio SID included
+      let fallbackErrorMsg = null;
+      if (errorMsgText) {
+        fallbackErrorMsg = `${errorMsgText} (Twilio: ${MessageSid})`;
+      } else {
+        fallbackErrorMsg = `TWILIO_SID:${MessageSid}`;
+      }
+      
       // Fallback: find most recent outbound SMS to this number within last 5 minutes
       updateResult = await pool.query(
         `UPDATE communication_log 
          SET status = $1,
              delivered_at = CASE WHEN $2 = 'delivered' THEN CURRENT_TIMESTAMP ELSE delivered_at END,
-             error_message = CASE WHEN $3 IS NOT NULL THEN $3 || ' (Twilio: ' || $4 || ')' ELSE COALESCE(error_message, 'TWILIO_SID:' || $4) END
+             error_message = COALESCE($3, error_message, $4)
          WHERE id = (
            SELECT id FROM communication_log 
            WHERE type = 'SMS' 
@@ -134,7 +148,7 @@ router.post('/twilio/status', async (req, res) => {
            LIMIT 1
          )
          RETURNING id`,
-        [dbStatus, MessageStatus.toLowerCase(), ErrorMessage || null, MessageSid, To]
+        [dbStatus, MessageStatus.toLowerCase(), errorMsgText, fallbackErrorMsg, To]
       );
     }
     
