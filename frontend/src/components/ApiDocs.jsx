@@ -250,6 +250,30 @@ function ApiDocs() {
                   </div>
 
                   <div className="mt-6">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-3">Authentication</h3>
+                    <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4 mb-4">
+                      <p className="text-sm font-semibold text-blue-900 mb-2">🔐 API Key Required for Order Submission</p>
+                      <p className="text-sm text-blue-800 mb-2">
+                        The <code className="bg-blue-100 px-1.5 py-0.5 rounded text-xs font-mono">POST /api/kingbee/orders</code> endpoint requires API key authentication.
+                      </p>
+                      <p className="text-xs text-blue-700 mb-2">
+                        Provide your API key using one of these headers:
+                      </p>
+                      <div className="space-y-2">
+                        <div className="bg-white rounded border border-blue-200 p-2">
+                          <code className="text-xs text-blue-900">X-API-Key: your-api-key-here</code>
+                        </div>
+                        <div className="bg-white rounded border border-blue-200 p-2">
+                          <code className="text-xs text-blue-900">Authorization: Bearer your-api-key-here</code>
+                        </div>
+                      </div>
+                      <p className="text-xs text-blue-600 italic mt-3">
+                        Contact us to receive your API key. It will be sent separately for security.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
                     <h3 className="text-lg font-semibold text-slate-900 mb-3">Quick Health Check</h3>
                     <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
                       <div className="flex items-center justify-between">
@@ -292,6 +316,28 @@ function ApiDocs() {
                   <h2 className="text-2xl font-bold text-slate-900 mb-2">{getCompanyNameForNav()} Integration API</h2>
                   <div className="h-1 w-24 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full mb-6"></div>
                   
+                  {/* Authentication */}
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold text-slate-900 mb-3">Authentication</h3>
+                    <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4 mb-4">
+                      <p className="text-sm font-semibold text-blue-900 mb-2">🔐 API Key Required</p>
+                      <p className="text-sm text-blue-800 mb-3">
+                        The order submission endpoint requires API key authentication. Provide your API key in one of two ways:
+                      </p>
+                      <div className="space-y-2 mb-3">
+                        <div className="bg-white rounded border border-blue-200 p-2">
+                          <code className="text-xs text-blue-900">X-API-Key: your-api-key-here</code>
+                        </div>
+                        <div className="bg-white rounded border border-blue-200 p-2">
+                          <code className="text-xs text-blue-900">Authorization: Bearer your-api-key-here</code>
+                        </div>
+                      </div>
+                      <p className="text-xs text-blue-700 italic">
+                        Contact us to receive your API key. It will be sent separately for security.
+                      </p>
+                    </div>
+                  </div>
+                  
                   {/* Submit Order */}
                   <div className="mb-8">
                     <h3 className="text-xl font-semibold text-slate-900 mb-3">Submit Order</h3>
@@ -305,7 +351,7 @@ function ApiDocs() {
                         </div>
                         <button
                           onClick={() => copyToClipboard(
-                            `curl -X POST ${baseUrl}${apiInfo.documentation.partner_integration.endpoints.submit_order.url} \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(apiInfo.documentation.partner_integration.endpoints.submit_order.example_request, null, 2).replace(/KB-12345/g, `${companyName.substring(0, 3).toUpperCase()}-12345`).replace(/kingbee/gi, companyName.toLowerCase())}'`,
+                            `curl -X POST ${baseUrl}${apiInfo.documentation.partner_integration.endpoints.submit_order.url} \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Key: your-api-key-here" \\\n  -d '${JSON.stringify(apiInfo.documentation.partner_integration.endpoints.submit_order.example_request, null, 2).replace(/KB-12345/g, `${companyName.substring(0, 3).toUpperCase()}-12345`).replace(/kingbee/gi, companyName.toLowerCase())}'`,
                             'submit-order'
                           )}
                           className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow-md ml-4"
@@ -724,14 +770,17 @@ Content-Type: application/json
                           <button
                             onClick={() => {
                               const prefix = companyName.toUpperCase().substring(0, 3);
-                              copyToClipboard(`curl -X POST ${baseUrl}/api/kingbee/orders \\\n  -H "Content-Type: application/json" \\\n  -d '{\n    "vehicles": [{"vin": "1FTBR1C82MKA69174", "issue_number": "${prefix}-12345"}],\n    "pickup": {"address": "123 Main St, City, ST 12345", "pickup_notes": "Optional"},\n    "delivery": {"address": "456 Oak Ave, City, ST 12345", "delivery_notes": "Optional"}\n  }'`, 'submit-order');
+                              copyToClipboard(`curl -X POST ${baseUrl}/api/kingbee/orders \\\n  -H "Content-Type: application/json" \\\n  -H "X-API-Key: your-api-key-here" \\\n  -d '{\n    "vehicles": [{"vin": "1FTBR1C82MKA69174", "issue_number": "${prefix}-12345"}],\n    "pickup": {"address": "123 Main St, City, ST 12345", "pickup_notes": "Optional"},\n    "delivery": {"address": "456 Oak Ave, City, ST 12345", "delivery_notes": "Optional"}\n  }'`, 'submit-order');
                             }}
                             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-all whitespace-nowrap"
                           >
                             {copiedCode === 'submit-order' ? '✓ Copied' : 'Copy'}
                           </button>
                         </div>
-                        <p className="text-xs text-slate-600 mb-2 mt-2">Submit order(s) from {replaceCompanyName('partner')} (creates in Super Dispatch automatically)</p>
+                        <p className="text-xs text-slate-600 mb-2 mt-2">
+                          Submit order(s) from {replaceCompanyName('partner')} (creates in Super Dispatch automatically)
+                          <span className="text-blue-600 font-semibold block mt-1">⚠️ Requires API key authentication</span>
+                        </p>
                         <pre className="bg-slate-900 text-slate-100 p-2 rounded text-xs mt-2 overflow-x-auto">
 {`{
   "vehicles": [{
@@ -748,6 +797,9 @@ Content-Type: application/json
   }
 }`}
                         </pre>
+                        <p className="text-xs text-blue-600 mt-2 italic">
+                          💡 Don't forget to include the <code className="bg-blue-100 px-1 py-0.5 rounded font-mono">X-API-Key</code> header when copying the curl command above.
+                        </p>
                       </div>
 
                       <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">

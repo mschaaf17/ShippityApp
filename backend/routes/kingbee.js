@@ -5,6 +5,44 @@ const { sendStatusUpdateToKingbee, getKingbeeWebhookConfig } = require('../servi
 const { createKingbeeOrders } = require('../services/kingbeeOrder');
 const { syncLoadFromSuperDispatch } = require('../services/loadSync');
 const superDispatch = require('../services/superdispatch');
+require('dotenv').config();
+
+/**
+ * Simple API key authentication middleware
+ * Checks for API key in either:
+ * - X-API-Key header
+ * - Authorization: Bearer <key> header
+ */
+const authenticateApiKey = (req, res, next) => {
+  const apiKey = process.env.KINGBEE_API_KEY;
+  
+  // If no API key is configured, skip authentication (backward compatible)
+  if (!apiKey) {
+    return next();
+  }
+  
+  // Get API key from header (X-API-Key or Authorization: Bearer <key>)
+  const providedKey = req.headers['x-api-key'] || 
+    (req.headers.authorization && req.headers.authorization.startsWith('Bearer ') 
+      ? req.headers.authorization.substring(7) 
+      : null);
+  
+  if (!providedKey) {
+    return res.status(401).json({
+      success: false,
+      message: 'API key required. Please provide X-API-Key header or Authorization: Bearer <key> header.'
+    });
+  }
+  
+  if (providedKey !== apiKey) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid API key'
+    });
+  }
+  
+  next();
+};
 
 /**
  * GET /api/kingbee/webhook-config
@@ -416,6 +454,10 @@ router.post('/loads/:loadId/send-webhook', async (req, res) => {
  * POST /api/kingbee/orders
  * Submit order(s) from Kingbee to Shippity
  * 
+ * Authentication:
+ * - API key required if KINGBEE_API_KEY is set in environment
+ * - Provide via X-API-Key header or Authorization: Bearer <key> header
+ * 
  * Request body:
  * - vehicles (required): Array of vehicles with vin and optional issue_number
  * - pickup (required): Object with address (required) and optional pickup_notes
@@ -426,7 +468,7 @@ router.post('/loads/:loadId/send-webhook', async (req, res) => {
  * - pickup.pickup_notes or pickup.notes: Pickup instructions/notes
  * - delivery.delivery_notes or delivery.notes: Delivery instructions/notes
  */
-router.post('/orders', async (req, res) => {
+router.post('/orders', authenticateApiKey, async (req, res) => {
   try {
     const { vehicles, pickup, delivery, state } = req.body;
     
